@@ -8,7 +8,7 @@ import { TFile } from "obsidian";
 import { rememberWritingFile } from "src/utils/rememberDrawingFile";
 import { NotebookEmbedPreviewWrapper } from "./notebook-embed-preview";
 import { openInkFile } from "src/utils/open-file";
-import { NotebookEmbedData } from "src/utils/embed";
+import { NotebookEmbedData, isInReadingMode } from "src/utils/embed";
 import { embedShouldActivateImmediately } from "src/utils/storage";
 import classNames from "classnames";
 import { atom, useSetAtom } from "jotai";
@@ -206,6 +206,11 @@ export function NotebookEmbed (props: {
 				<div
 					className = 'inkc_resize-container'
 					ref = {resizeContainerElRef}
+					style = {{
+						// Containing block for the absolutely positioned preview. See the same
+						// note in writing-embed.tsx.
+						position: 'relative',
+					}}
 				>
 
 					<NotebookEmbedPreviewWrapper
@@ -266,6 +271,10 @@ export function NotebookEmbed (props: {
 	}
 
 	function switchToEditMode() {
+		// Reading mode has no editor to switch into and no editor to write changes back
+		// through, so the embed stays a static preview there. Checked live rather than at
+		// mount because Obsidian renders preview sections detached before inserting them.
+		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
 		verbose('Set NotebookEmbedState: loadingEditor')
 		setEmbedState(NotebookEmbedState.loadingEditor);
 	}

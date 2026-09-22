@@ -198,3 +198,58 @@ body.inkc_ereader {
         animation: none !important;
     }
 }
+
+///////////////////
+// Reading mode
+///////////////////
+
+// Every containment rule in writing-embed.scss and drawing-embed.scss is scoped to
+// `.cm-preview-code-block.cm-embed-block`, which only exists in Live Preview. Reading mode
+// renders the same block with none of that scaffolding, so it needs its own copy.
+// `applyCommonAncestorStyling` tags the block with `.inkc_reading-embed-block`.
+.markdown-preview-view .inkc_reading-embed-block,
+.markdown-preview-view .inkc_reading-embed-block:hover {
+    // The reading column is the full width available — an embed must not exceed it, and
+    // must not inherit a full-bleed margin meant for the Live Preview scroller.
+    max-width: 100% !important;
+    margin-inline-start: 0 !important;
+    margin-inline-end: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+
+    // Reading mode is read-only, so nothing needs to escape the block, and letting it
+    // overflow horizontally is what pushes a preview off the side of the note.
+    overflow-x: hidden;
+    box-shadow: none;
+
+    .edit-block-button {
+        display: none;
+    }
+}
+
+// A preview rendered into reading mode is a static image of the writing. It gets its size
+// from the resize container the same way Live Preview does, so it needs that container to
+// be a positioned ancestor (set inline in the embed components) and nothing else.
+.markdown-preview-view .inkc_reading-embed-block {
+    .inkc_resize-container {
+        max-width: 100%;
+    }
+
+    // Interactive chrome has no meaning without an editor to switch into.
+    .inkc_preview-buttons,
+    .ink_primary-menu-bar,
+    .ink_secondary-menu-bar {
+        display: none;
+    }
+
+    .inkc_writing-embed-preview,
+    .inkc_drawing-embed-preview,
+    .inkc_notebook-embed-preview {
+        cursor: default;
+
+        svg,
+        img {
+            cursor: default;
+        }
+    }
+}

@@ -3,7 +3,7 @@ import { EditorPosition, MarkdownPostProcessorContext, MarkdownRenderChild, TFil
 import * as React from "react";
 import { Root, createRoot } from "react-dom/client";
 import { InkFileData, stringifyPageData } from "src/utils/page-file";
-import { DrawingEmbedData, applyCommonAncestorStyling, rebuildDrawingEmbed, removeEmbed, resolveInkFileFromEmbed, stringifyEmbedData } from "src/utils/embed";
+import { DrawingEmbedData, applyCommonAncestorStyling, getEditorForEmbedSource, rebuildDrawingEmbed, removeEmbed, resolveInkFileFromEmbed, stringifyEmbedData } from "src/utils/embed";
 import InkPlugin from "src/main";
 import DrawingEmbed from "src/tldraw/drawing/drawing-embed";
 import { DRAW_EMBED_KEY } from "src/constants";
@@ -48,7 +48,7 @@ function updateEmbed(plugin: InkPlugin, ctx: MarkdownPostProcessorContext, el: H
 	// NOTE: The timeout stuff was here because I was trying to do this on every save... but it remounts the whole embed.
 	// updateTimer = setTimeout( () => {
 		
-		const cmEditor = plugin.app.workspace.activeEditor?.editor;
+		const cmEditor = getEditorForEmbedSource(plugin, ctx);
 		if(!cmEditor) return;
 	
 		const sectionInfo = ctx.getSectionInfo(el);

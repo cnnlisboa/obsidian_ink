@@ -2,7 +2,7 @@ import { MarkdownRenderChild, TFile } from "obsidian";
 import * as React from "react";
 import { Root, createRoot } from "react-dom/client";
 import { InkFileData, stringifyPageData } from "src/utils/page-file";
-import { NotebookEmbedData, applyCommonAncestorStyling, removeEmbed, resolveInkFileFromEmbed, stringifyEmbedData } from "src/utils/embed";
+import { NotebookEmbedData, applyCommonAncestorStyling, getEditorForEmbedSource, removeEmbed, resolveInkFileFromEmbed, stringifyEmbedData } from "src/utils/embed";
 import InkPlugin from "src/main";
 import NotebookEmbed from "src/tldraw/notebook/notebook-embed";
 import { NOTEBOOK_EMBED_KEY } from "src/constants";
@@ -30,7 +30,7 @@ export function registerNotebookEmbed(plugin: InkPlugin) {
 				removeEmbed: () => removeEmbed(plugin, ctx, el),
 				updateEmbedData: (data: NotebookEmbedData) => {
 					// Reuse the writing embed data update mechanism
-					const cmEditor = plugin.app.workspace.activeEditor?.editor;
+					const cmEditor = getEditorForEmbedSource(plugin, ctx);
 					if(!cmEditor) return;
 					const sectionInfo = ctx.getSectionInfo(el);
 					if(sectionInfo?.lineStart === undefined || sectionInfo.lineEnd === undefined) return;

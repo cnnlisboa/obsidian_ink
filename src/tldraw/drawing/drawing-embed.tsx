@@ -11,7 +11,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { DrawingEmbedPreview, DrawingEmbedPreviewWrapper } from "./drawing-embed-preview/drawing-embed-preview";
 import { openInkFile } from "src/utils/open-file";
 import { nanoid } from "nanoid";
-import { DrawingEmbedData } from "src/utils/embed";
+import { DrawingEmbedData, isInReadingMode } from "src/utils/embed";
 import { embedShouldActivateImmediately } from "src/utils/storage";
 import classNames from "classnames";
 import { atom, useAtom, useSetAtom } from "jotai";
@@ -311,6 +311,10 @@ export function DrawingEmbed (props: {
 	}
 
 	function switchToEditMode() {
+		// Reading mode has no editor to switch into and no editor to write changes back
+		// through, so the embed stays a static preview there. Checked live rather than at
+		// mount because Obsidian renders preview sections detached before inserting them.
+		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
 		verbose('Set DrawingEmbedState: loadingEditor')
 		applyEmbedHeight();
 		setEmbedState(DrawingEmbedState.loadingEditor);

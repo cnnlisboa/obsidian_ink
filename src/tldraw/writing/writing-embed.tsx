@@ -12,7 +12,7 @@ import { GlobalSessionState } from "src/logic/stores";
 import { useDispatch } from 'react-redux';
 import { WritingEmbedPreviewWrapper } from "./writing-embed-preview/writing-embed-preview";
 import { openInkFile } from "src/utils/open-file";
-import { WritingEmbedData } from "src/utils/embed";
+import { WritingEmbedData, isInReadingMode } from "src/utils/embed";
 import { nanoid } from "nanoid";
 import { embedShouldActivateImmediately } from "src/utils/storage";
 import classNames from "classnames";
@@ -244,6 +244,15 @@ export function WritingEmbed (props: {
 						props.embedData?.maxHeight && 'inkc_height-capped',
 					])}
 					ref = {resizeContainerElRef}
+					style = {{
+						// The preview inside is absolutely positioned, so this has to be its
+						// containing block. Without it, Live Preview resolves the preview against
+						// CodeMirror's positioned .cm-content (right by accident), while reading
+						// mode resolves it against the page sizer and the preview renders at full
+						// page width, overflowing the note. See drawing-embed.tsx, which has
+						// always set this.
+						position: 'relative',
+					}}
 				>
 
 					<WritingEmbedPreviewWrapper
@@ -310,6 +319,10 @@ export function WritingEmbed (props: {
 	}
 
 	function switchToEditMode() {
+		// Reading mode has no editor to switch into and no editor to write changes back
+		// through, so the embed stays a static preview there. Checked live rather than at
+		// mount because Obsidian renders preview sections detached before inserting them.
+		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
 		verbose('Set WritingEmbedState: loadingEditor')
 		setEmbedState(WritingEmbedState.loadingEditor);
 	}

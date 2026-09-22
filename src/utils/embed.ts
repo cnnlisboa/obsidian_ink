@@ -177,7 +177,7 @@ export const rebuildDrawingEmbed = (embedData: DrawingEmbedData) => {
  * Updates the JSON content of a writing embed code block without changing its boundaries.
  */
 export function updateWritingEmbedData(plugin: InkPlugin, ctx: MarkdownPostProcessorContext, el: HTMLElement, embedData: WritingEmbedData) {
-	const cmEditor = plugin.app.workspace.activeEditor?.editor;
+	const cmEditor = getEditorForEmbedSource(plugin, ctx);
 	if(!cmEditor) return;
 
 	const sectionInfo = ctx.getSectionInfo(el);
@@ -196,6 +196,31 @@ export function updateWritingEmbedData(plugin: InkPlugin, ctx: MarkdownPostProce
 	cmEditor.replaceRange(formatEmbedJson(embedData as Record<string, unknown>) + '\n', editorStart, editorEnd);
 }
 
+/**
+ * The editor for the note this embed lives in, or null when there isn't one to write through.
+ *
+ * `workspace.activeEditor` is whichever note the user is currently editing - not necessarily
+ * the note being rendered. An embed can be rendered from a note that isn't active: in a split
+ * pane, in a hover preview, or in reading mode while a different note holds the editor. Writing
+ * a codeblock update through the active editor in those cases edits the wrong file, so the
+ * source path has to match before anything is written.
+ */
+export function getEditorForEmbedSource(plugin: InkPlugin, ctx: MarkdownPostProcessorContext) {
+	const activeEditor = plugin.app.workspace.activeEditor;
+	if(!activeEditor?.editor) return null;
+	if(activeEditor.file?.path !== ctx.sourcePath) return null;
+	return activeEditor.editor;
+}
+
+/**
+ * Whether this embed was rendered into reading mode rather than Live Preview.
+ * Reading mode has none of the `.cm-*` scaffolding, so every ancestor lookup and every
+ * stylesheet rule scoped to CodeMirror silently does nothing there.
+ */
+export function isInReadingMode(el: HTMLElement): boolean {
+	return !el.closest('.cm-embed-block') && !!el.closest('.markdown-preview-view');
+}
+
 // This function came from Notion like tables code
 export const getViewMode = (el: HTMLElement): MarkdownViewModeType | null => {
 	const parent = el.parentElement;
@@ -208,6 +233,16 @@ export const getViewMode = (el: HTMLElement): MarkdownViewModeType | null => {
 };
 
 export function applyCommonAncestorStyling(embedEl: HTMLElement) {
+	// Reading mode renders the block into `.markdown-preview-sizer`, which already is the
+	// reading column - so the block only needs marking for the stylesheet, not re-measuring.
+	// The full-width margin negation below is deliberately skipped: the reading column has no
+	// scroller padding to negate, and guessing at one is how the embed ends up overflowing.
+	if(isInReadingMode(embedEl)) {
+		const readingBlockEl = (embedEl.closest('[class*="block-language-"]') ?? embedEl) as HTMLElement;
+		readingBlockEl.classList.add('inkc_embed-block', 'inkc_reading-embed-block');
+		return;
+	}
+
 	const parentEmbedBlockEl = embedEl.closest('.cm-embed-block') as HTMLElement;
 	if(!parentEmbedBlockEl) return;
 
@@ -265,7 +300,7 @@ export function applyCommonAncestorStyling(embedEl: HTMLElement) {
  * @returns 
  */
 export function removeEmbed(plugin: InkPlugin, ctx: MarkdownPostProcessorContext, el: HTMLElement) {
-	const cmEditor = plugin.app.workspace.activeEditor?.editor;
+	const cmEditor = getEditorForEmbedSource(plugin, ctx);
 	if(!cmEditor) return;
 
 	const sectionInfo = ctx.getSectionInfo(el);
