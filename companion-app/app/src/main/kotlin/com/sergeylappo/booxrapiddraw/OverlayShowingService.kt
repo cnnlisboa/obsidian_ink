@@ -241,6 +241,18 @@ class OverlayShowingService : Service(), BridgeServerListener {
         if (mode != null) {
             val scale = cssScale(mode)
             val origin = viewOrigin()
+
+            // Same CSS -> view-local physical conversion as the limit rect below. These are the UI
+            // regions sitting over the embed — its menu bar, popups, the keyboard — that should not
+            // capture the pen even though they fall inside the area we're drawing in.
+            val excludes = mode.excludeRects.mapNotNull { r ->
+                val exLeft = ((mode.screenOriginX + r.left) * scale).toInt() - origin[0]
+                val exTop = ((mode.screenOriginY + r.top) * scale).toInt() - origin[1]
+                val exRight = exLeft + (r.width * scale).toInt()
+                val exBottom = exTop + (r.height * scale).toInt()
+                // An empty rect is meaningless to the SDK and cheap to drop here.
+                if (exRight <= exLeft || exBottom <= exTop) null else Rect(exLeft, exTop, exRight, exBottom)
+            }
             // setLimitRect takes view-local coordinates — the original code passed it
             // `getLocalVisibleRect` output — so subtract the view's own screen position here,
             // exactly mirroring the addition on the outgoing-point path.
@@ -248,9 +260,16 @@ class OverlayShowingService : Service(), BridgeServerListener {
             val top = ((mode.screenOriginY + mode.rectTop) * scale).toInt() - origin[1]
             val right = left + (mode.rectWidth * scale).toInt()
             val bottom = top + (mode.rectHeight * scale).toInt()
-            touchHelper.setLimitRect(Rect(left, top, right, bottom), listOf())
+            Log.i(
+                TAG,
+                "capture limit=($left,$top,$right,$bottom) excludes=${excludes.size}" +
+                    excludes.joinToString(prefix = " ", separator = " ") { "[${it.left},${it.top},${it.right},${it.bottom}]" }
+            )
+            touchHelper.setLimitRect(Rect(left, top, right, bottom), excludes)
             setRawCaptureEnabled(true)
         } else {
+            // No session: back to the app's general-purpose behaviour, whole screen, nothing
+            // excluded. Stale exclusions here would be invisible dead patches in other apps.
             touchHelper.setLimitRect(fullScreenBounds, listOf())
             setRawCaptureEnabled(!BridgePrefs.isObsidianOnlyMode(this))
         }

@@ -1,44 +1,22 @@
-import { App, Editor, FuzzySuggestModal, Notice, TFile } from "obsidian";
+import { Editor } from "obsidian";
 import { WRITE_FILE_EXT } from "src/constants";
 import InkPlugin from "src/main";
 import { buildWritingEmbed } from "src/utils/embed";
+import { SelectInkFileModal } from "src/modals/select-ink-file-modal/select-ink-file-modal";
 
 ////////
 ////////
 
 export const insertExistingWritingFile = (plugin: InkPlugin, editor: Editor) => {
-    new SelectHandwritingFileModal(plugin.app, (filepath) => {
-        let embedStr = buildWritingEmbed(filepath);
-        editor.replaceRange( embedStr, editor.getCursor() );
+    new SelectInkFileModal({
+        plugin,
+        extension: WRITE_FILE_EXT,
+        kind: 'writing',
+        onSubmit: (filepath) => {
+            let embedStr = buildWritingEmbed(filepath);
+            editor.replaceRange(embedStr, editor.getCursor());
+        },
     }).open();
-    
-}
-
-export class SelectHandwritingFileModal extends FuzzySuggestModal<TFile> {
-    onSubmit: Function;
-
-    constructor(app: App, onSubmit: (filepath: string) => void) {
-        super(app);
-        this.onSubmit = onSubmit;
-    }
-
-    getItems(): TFile[] {
-        const allFiles = this.app.vault.getFiles();
-        const files: TFile[] = [];
-        for(let i=0; i<allFiles.length; i++) {
-            const file = allFiles[i];
-            if(file.extension === WRITE_FILE_EXT) files.push(file);
-        }
-        return files;
-    }
-
-    getItemText(file: TFile): string {
-        return file.basename;
-    }
-
-    onChooseItem(file: TFile, evt: MouseEvent | KeyboardEvent) {
-        this.onSubmit(file.path);
-    }
 }
 
 export default insertExistingWritingFile;

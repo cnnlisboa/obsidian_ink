@@ -37,6 +37,15 @@ export interface SetWritingModeMessage {
 	// a scale error that grows with distance from the viewport origin. Authoritative here, because
 	// clientX/clientY (what tldraw reads) are defined in exactly these units.
 	devicePixelRatio: number,
+	// Regions inside `rect` that must NOT capture the pen — the embed's own menu bar and scroll
+	// buttons, any popup or modal open over it, and the on-screen keyboard's inset. Same
+	// viewport-relative CSS px space as `rect`.
+	//
+	// This is a blocklist, deliberately: capture stays on everywhere by default and we subtract the
+	// UI we know about. The failure mode is stray ink over something we forgot, which is exactly
+	// today's behaviour — as opposed to an allowlist, where anything we forget to declare goes dead
+	// to the pen with no indication why.
+	excludeRects: BridgeRect[],
 }
 
 export interface BridgeStrokePoint {

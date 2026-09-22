@@ -33,7 +33,10 @@ export class CompanionBridgeClient {
 	private reconnectTimeout: number | undefined;
 	// Buffered so it can be (re)sent once the socket is actually open — a fresh
 	// WebSocket is still CONNECTING right after `new WebSocket(...)` returns.
-	private pendingMode: { rect: BridgeRect, style: BridgeStyle, active: boolean, screenOrigin: { x: number, y: number } } | null = null;
+	private pendingMode: { rect: BridgeRect, style: BridgeStyle, active: boolean, screenOrigin: { x: number, y: number }, excludeRects: BridgeRect[] } | null = null;
+	// Set while Obsidian isn't in front. Exclusion rects would otherwise stay applied over whatever
+	// app took over the screen, leaving invisible dead patches in it.
+	private suspended = false;
 	private readonly pointerId = 9001; // fixed synthetic id, distinct from any real touch/pen pointer
 
 	constructor(editor: Editor, port: number) {
@@ -42,7 +45,7 @@ export class CompanionBridgeClient {
 		this.canvasId = `ink-${Math.random().toString(36).slice(2)}`;
 	}
 
-	startSession(rect: BridgeRect, style: BridgeStyle, screenOrigin: { x: number, y: number }) {
+	startSession(rect: BridgeRect, style: BridgeStyle, screenOrigin: { x: number, y: number }, excludeRects: BridgeRect[] = []) {
 		if (CompanionBridgeClient.activeInstance && CompanionBridgeClient.activeInstance !== this) {
 			verbose('Companion bridge: preempting previous session — a new embed took ownership');
 			CompanionBridgeClient.activeInstance.endSession();
@@ -51,20 +54,39 @@ export class CompanionBridgeClient {
 
 		this.active = true;
 		this.sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		this.suspended = false;
 		this.connect();
-		this.sendSetWritingMode(rect, style, true, screenOrigin);
+		this.sendSetWritingMode(rect, style, true, screenOrigin, excludeRects);
 	}
 
-	updateRect(rect: BridgeRect, style: BridgeStyle, screenOrigin: { x: number, y: number }) {
-		if (!this.active) return;
-		this.sendSetWritingMode(rect, style, true, screenOrigin);
+	updateRect(rect: BridgeRect, style: BridgeStyle, screenOrigin: { x: number, y: number }, excludeRects: BridgeRect[] = []) {
+		if (!this.active || this.suspended) return;
+		this.sendSetWritingMode(rect, style, true, screenOrigin, excludeRects);
+	}
+
+	/**
+	 * Stands the session down without ending it — for when Obsidian goes to the background. The
+	 * companion app drops back to its general-purpose, whole-screen behaviour, which is what should
+	 * happen over somebody else's app.
+	 */
+	suspend() {
+		if (!this.sessionId || this.suspended) return;
+		this.suspended = true;
+		this.sendSetWritingMode({ left: 0, top: 0, width: 0, height: 0 }, { color: '#000000', width: 1 }, false, { x: 0, y: 0 }, []);
+	}
+
+	resume(rect: BridgeRect, style: BridgeStyle, screenOrigin: { x: number, y: number }, excludeRects: BridgeRect[] = []) {
+		if (!this.sessionId || !this.suspended) return;
+		this.suspended = false;
+		this.sendSetWritingMode(rect, style, true, screenOrigin, excludeRects);
 	}
 
 	endSession() {
 		if (this.sessionId) {
-			this.sendSetWritingMode({ left: 0, top: 0, width: 0, height: 0 }, { color: '#000000', width: 1 }, false, { x: 0, y: 0 });
+			this.sendSetWritingMode({ left: 0, top: 0, width: 0, height: 0 }, { color: '#000000', width: 1 }, false, { x: 0, y: 0 }, []);
 		}
 		this.active = false;
+		this.suspended = false;
 		this.sessionId = null;
 		this.lastDispatchedPoint = null;
 		this.disconnect();
@@ -80,7 +102,7 @@ export class CompanionBridgeClient {
 	// The native pen path is suppressed on this signal, so it has to fail safe: if the companion
 	// app isn't running (or dies mid-session), this goes false and normal WebView pen input works.
 	isLive(): boolean {
-		return this.active && this.socket?.readyState === WebSocket.OPEN;
+		return this.active && !this.suspended && this.socket?.readyState === WebSocket.OPEN;
 	}
 
 	////////
@@ -117,9 +139,9 @@ export class CompanionBridgeClient {
 		this.reconnectTimeout = window.setTimeout(() => this.connect(), RECONNECT_DELAY_MS);
 	}
 
-	private sendSetWritingMode(rect: BridgeRect, style: BridgeStyle, active: boolean, screenOrigin: { x: number, y: number }) {
+	private sendSetWritingMode(rect: BridgeRect, style: BridgeStyle, active: boolean, screenOrigin: { x: number, y: number }, excludeRects: BridgeRect[] = []) {
 		if (!this.sessionId) return;
-		this.pendingMode = { rect, style, active, screenOrigin };
+		this.pendingMode = { rect, style, active, screenOrigin, excludeRects };
 		this.flushPendingMode();
 	}
 

@@ -10,6 +10,14 @@ import java.net.InetSocketAddress
 
 private const val TAG = "BridgeServer"
 
+/** A rectangle in the plugin's viewport-relative CSS px space. */
+data class BridgeRect(
+    val left: Double,
+    val top: Double,
+    val width: Double,
+    val height: Double,
+)
+
 // Mirrors SetWritingModeMessage in src/types/bridge-protocol.ts (the Obsidian plugin repo).
 data class WritingModeState(
     val sessionId: String,
@@ -26,6 +34,10 @@ data class WritingModeState(
     // The WebView's own physical->CSS px ratio. 0.0 when the plugin didn't send one (older build
     // or the mock server), in which case the caller falls back to displayMetrics.density.
     val devicePixelRatio: Double,
+    // Regions inside `rect` that must not capture the pen: the embed's menu bar and scroll buttons,
+    // popups and modals open over it, and the on-screen keyboard. A blocklist, so an empty list
+    // just means "capture the whole rect" — the behaviour before this existed.
+    val excludeRects: List<BridgeRect>,
 )
 
 interface BridgeServerListener {
@@ -73,11 +85,29 @@ class BridgeServer(port: Int, private val listener: BridgeServerListener) :
                     screenOriginX = origin?.optDouble("x", 0.0) ?: 0.0,
                     screenOriginY = origin?.optDouble("y", 0.0) ?: 0.0,
                     devicePixelRatio = json.optDouble("devicePixelRatio", 0.0),
+                    excludeRects = parseRects(json.optJSONArray("excludeRects")),
                 )
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse bridge message: $message", e)
         }
+    }
+
+    private fun parseRects(array: JSONArray?): List<BridgeRect> {
+        if (array == null) return emptyList()
+        val rects = ArrayList<BridgeRect>(array.length())
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            rects.add(
+                BridgeRect(
+                    left = obj.optDouble("left", 0.0),
+                    top = obj.optDouble("top", 0.0),
+                    width = obj.optDouble("width", 0.0),
+                    height = obj.optDouble("height", 0.0),
+                )
+            )
+        }
+        return rects
     }
 
     override fun onError(conn: WebSocket?, ex: Exception) {

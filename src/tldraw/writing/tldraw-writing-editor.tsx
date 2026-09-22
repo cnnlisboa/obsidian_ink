@@ -210,7 +210,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			// has to match it.
 			if(props.plugin.settings.companionBridgeEnabled) {
 				const client = bridgeClientRef.current = new CompanionBridgeClient(editor, props.plugin.settings.companionBridgePort);
-				client.startSession(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current);
+				client.startSession(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current, getBridgeExcludeRects());
 			}
 		});
 
@@ -227,7 +227,9 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 				case Activity.CameraMovedManually:
 					if(cameraLimitsRef.current) restrictWritingCamera(editor, cameraLimitsRef.current, props.embedded ? 0 : MENUBAR_HEIGHT_PX);
 					unstashStaleContent(editor);
-					bridgeClientRef.current?.updateRect(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current);
+					// Coalesced: a pinch or a scroll in a capped embed moves the camera on every
+					// pointer move, and each send now carries a DOM scan for exclusions.
+					queueBridgeUpdate();
 					break;
 
 				case Activity.DrawingStarted:
@@ -314,7 +316,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 			if (e.type === 'pointerdown') {
 				screenOriginRef.current = { x: e.screenX - e.clientX, y: e.screenY - e.clientY };
-				client.updateRect(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current);
+				sendBridgeUpdate();
 			}
 
 			if (e.pointerType !== 'pen') return;
@@ -329,6 +331,52 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			}
 		}
 
+		////////
+		//////// Keeping the companion app's capture region honest.
+		////////
+
+		// Scrolling the note moves the embed without moving the tldraw camera, so none of the
+		// existing senders fire and the capture region silently drifts off the embed. Popups and
+		// the on-screen keyboard appear and vanish with no event either of them would notice.
+		// Coalesced to one send per frame, since scroll fires far faster than the socket needs.
+		let bridgeUpdateQueued = false;
+		const queueBridgeUpdate = () => {
+			if (bridgeUpdateQueued) return;
+			bridgeUpdateQueued = true;
+			requestAnimationFrame(() => {
+				bridgeUpdateQueued = false;
+				sendBridgeUpdate();
+			});
+		};
+
+		const scrollContainerEl = editorWrapperRefEl.current?.closest('.cm-scroller') as HTMLElement | null;
+
+		// Exclusions left applied while Obsidian is in the background would sit as invisible dead
+		// patches over whatever app replaced it, so the session stands down instead.
+		const handleVisibilityChange = () => {
+			const client = bridgeClientRef.current;
+			if (!client) return;
+			if (document.hidden) {
+				client.suspend();
+			} else {
+				client.resume(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current, getBridgeExcludeRects());
+			}
+		};
+
+		// Catches menus, modals and suggestion popups opening over the embed. Watching body's direct
+		// children is enough — Obsidian mounts all of them there — and avoids a subtree observer
+		// firing on every DOM change the editor itself makes while writing.
+		const popupObserver = new MutationObserver(queueBridgeUpdate);
+
+		if (props.plugin.settings.companionBridgeEnabled) {
+			scrollContainerEl?.addEventListener('scroll', queueBridgeUpdate, { passive: true });
+			window.addEventListener('resize', queueBridgeUpdate);
+			window.visualViewport?.addEventListener('resize', queueBridgeUpdate);
+			window.visualViewport?.addEventListener('scroll', queueBridgeUpdate);
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+			popupObserver.observe(document.body, { childList: true });
+		}
+
 		const unmountActions = () => {
 			// NOTE: This prevents the postProcessTimer completing when a new file is open and saving over that file.
 			resetInputPostProcessTimers();
@@ -339,6 +387,12 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 					tlCanvas.removeEventListener(name, handleBridgePointer as EventListener, { capture: true });
 				}
 			}
+			scrollContainerEl?.removeEventListener('scroll', queueBridgeUpdate);
+			window.removeEventListener('resize', queueBridgeUpdate);
+			window.visualViewport?.removeEventListener('resize', queueBridgeUpdate);
+			window.visualViewport?.removeEventListener('scroll', queueBridgeUpdate);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
+			popupObserver.disconnect();
 			bridgeClientRef.current?.endSession();
 			bridgeClientRef.current = undefined;
 		}
@@ -373,6 +427,50 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	function getBridgeRect(editor: Editor): BridgeRect {
 		const bounds = editor.getViewportScreenBounds();
 		return { left: bounds.x, top: bounds.y, width: bounds.w, height: bounds.h };
+	}
+
+	// Regions the companion app must not capture in, in the same viewport CSS px space as
+	// getBridgeRect(). A blocklist: capture is on everywhere by default and these are subtracted,
+	// so anything missed here just gets stray ink — the behaviour that already exists — rather than
+	// going silently dead to the pen.
+	// Everything the companion app needs about the current state of the embed, in one place, so the
+	// camera listener, the pen calibration handler and the scroll/popup listeners can't drift apart.
+	function sendBridgeUpdate() {
+		const editor = tlEditorRef.current;
+		if (!editor) return;
+		bridgeClientRef.current?.updateRect(getBridgeRect(editor), getBridgeStyle(), screenOriginRef.current, getBridgeExcludeRects());
+	}
+
+	function getBridgeExcludeRects(): BridgeRect[] {
+		const rects: BridgeRect[] = [];
+
+		const push = (el: Element) => {
+			const r = el.getBoundingClientRect();
+			// Hidden or collapsed elements report empty boxes; excluding those would be a no-op at
+			// best and a zero-size rect for the SDK to choke on at worst.
+			if (r.width <= 0 || r.height <= 0) return;
+			rects.push({ left: r.left, top: r.top, width: r.width, height: r.height });
+		};
+
+		// This editor's own chrome. Both sit *over* the canvas (PrimaryMenuBar is a sibling of
+		// TldrawEditor, positioned above it), so they fall inside the rect we ask to capture.
+		const wrapper = editorWrapperRefEl.current;
+		wrapper?.querySelectorAll('.ink_primary-menu-bar, .ink_scroll-buttons').forEach(push);
+
+		// App-level popups and modals can open over any embed, including ours.
+		document.querySelectorAll('.menu, .modal-container, .suggestion-container').forEach(push);
+
+		// The on-screen keyboard doesn't fire resize; it shrinks the visual viewport instead.
+		const vv = window.visualViewport;
+		if (vv) {
+			const covered = window.innerHeight - (vv.height + vv.offsetTop);
+			// Threshold filters out the small viewport jitter that browser chrome causes.
+			if (covered > 40) {
+				rects.push({ left: 0, top: window.innerHeight - covered, width: window.innerWidth, height: covered });
+			}
+		}
+
+		return rects;
 	}
 
 	function getBridgeStyle(): BridgeStyle {
