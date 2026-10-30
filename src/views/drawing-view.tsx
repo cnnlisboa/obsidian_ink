@@ -106,7 +106,13 @@ export class DrawingView extends TextFileView {
         this.disableFocusMode();
     }
 
+    // The editor is unmounted here too, not only in clear(). Closing the tab, or opening another
+    // kind of file in it, unloads the view without clearing it, which used to leave the editor
+    // running unseen: its timers, its listeners, and its companion-app session, which could still
+    // receive pen input and save it to this file.
     onunload(): void {
+        this.root?.unmount();
+        this.root = null;
         this.disableFocusMode();
     }
 
