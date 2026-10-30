@@ -16,6 +16,8 @@ export interface PluginSettings {
 	nameFilesAfterNote: boolean,
 	// Save and close an open embed editor when tapping anywhere outside it.
 	closeEditorOnTapOutside: boolean,
+	// Keep an SVG copy beside each writing and drawing file. See svg-sidecar.ts.
+	saveSvgSidecar: boolean,
 	customAttachmentFolders: boolean,
     noteAttachmentFolderLocation: 'obsidian' | 'root' | 'note',
     notelessAttachmentFolderLocation: 'obsidian' | 'root',
@@ -74,6 +76,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	createCompanionNote: true,
 	nameFilesAfterNote: true,
 	closeEditorOnTapOutside: true,
+	saveSvgSidecar: false,
 	customAttachmentFolders: false,
     noteAttachmentFolderLocation: 'obsidian',
 	notelessAttachmentFolderLocation: 'obsidian',

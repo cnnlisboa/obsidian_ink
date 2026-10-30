@@ -1,5 +1,5 @@
 import './settings-tab.scss';
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import InkPlugin from "src/main";
 import MyPlugin from "src/main";
 import { ConfirmationModal } from "src/modals/confirmation-modal/confirmation-modal";
@@ -8,6 +8,7 @@ import { setNewWritingLineHeight } from 'src/utils/tldraw-helpers';
 import { showWelcomeTips, showWelcomeTips_maybe } from 'src/notices/welcome-notice';
 import { ToggleAccordionSetting } from 'src/components/dom-components/toggle-accordion-setting';
 import { isEreader } from 'src/utils/isEreader';
+import { writeAllSvgSidecars } from 'src/logic/svg-sidecar';
 import { WRITING_PAPERS, WritingPaper } from 'src/tldraw/writing-shapes/writing-lines';
 
 /////////
@@ -197,6 +198,35 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 				await plugin.saveSettings();
 			});
 		});
+
+	new Setting(containerEl)
+		.setClass('inkc_setting')
+		.setName('Save an SVG copy of each writing and drawing')
+		.setDesc('Keeps a picture of the ink beside each writing and drawing file (as "Name.inkcwriting.svg"), refreshed a few seconds after each change, so it can be viewed, exported or published without this plugin. Copies follow their file when it\'s renamed or deleted. Notebooks aren\'t copied.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.saveSvgSidecar);
+			toggle.onChange(async (value) => {
+				plugin.settings.saveSvgSidecar = value;
+				await plugin.saveSettings();
+				refresh();
+			});
+		});
+
+	if (plugin.settings.saveSvgSidecar) {
+		new Setting(containerEl)
+			.setClass('inkc_setting')
+			.setName('Create copies for existing files')
+			.setDesc('New copies are made as files change. This makes them now for every writing and drawing that\'s already up to date.')
+			.addButton((button) => {
+				button.setButtonText('Create copies');
+				button.onClick(async () => {
+					button.setDisabled(true);
+					const written = await writeAllSvgSidecars(plugin);
+					button.setDisabled(false);
+					new Notice(`Ink: ${written} SVG ${written === 1 ? 'copy' : 'copies'} saved`);
+				});
+			});
+	}
 
 	new Setting(containerEl)
 		.setClass('inkc_setting')

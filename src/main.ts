@@ -32,6 +32,7 @@ import { drawDefaultSvgStr, writeDefaultSvgStr, writeExistingSvgStr, writePasteS
 import { drawExistingSvgStr, drawPasteSvgStr } from './graphics/icons/command-icons';
 import { applyDeviceClasses } from './utils/device-classes';
 import { registerOpenEmbedDismissal } from './logic/open-embed';
+import { registerSvgSidecars } from './logic/svg-sidecar';
 // Imported last so its cross-cutting rules land after every component stylesheet
 // in the bundled CSS, and win ties on equal specificity.
 import './styles/plugin-polish.scss';
@@ -88,6 +89,7 @@ export default class InkPlugin extends Plugin {
 		}
 		
 		registerSettingsTab(this);
+		registerSvgSidecars(this);
 
 		this.registerEvent(this.app.vault.on('rename', async (file, oldPath) => {
 			if (!(file instanceof TFile)) return;
