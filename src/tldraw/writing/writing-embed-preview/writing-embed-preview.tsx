@@ -13,6 +13,9 @@ import { CollapseIcon } from 'src/graphics/icons/collapse-icon';
 import { FullscreenIcon } from 'src/graphics/icons/fullscreen-icon';
 import { menuOption } from 'src/tldraw/overflow-menu/overflow-menu';
 import { useEmbedContextMenu } from 'src/tldraw/use-embed-context-menu';
+import { InkPreview, getInkPreview } from 'src/utils/page-file';
+import { PageLayout, getPagePreviewSvg } from 'src/logic/writing-pages';
+import { AddPageIcon } from 'src/tldraw/page-controls/page-controls';
 const emptyWritingSvg = require('../../../placeholders/empty-writing-embed.svg');
 
 //////////
@@ -29,6 +32,11 @@ interface WritingEmbedPreviewProps {
     scale?: number,
     /** Offered on right-click or long-press. See useEmbedContextMenu. */
     menuOptions?: menuOption[],
+    /** In a paged writing, its layout and the page to show (from 0). See writing-pages.ts. */
+    layout?: PageLayout,
+    page?: number,
+    /** Offered on a writing that's still one sheet. Adding a page splits it into pages. */
+    onAddPageClick?: () => void,
 }
 
 // Wraps the component so that it can full unmount when inactive
@@ -48,16 +56,19 @@ const WritingEmbedPreview: React.FC<WritingEmbedPreviewProps> = (props) => {
 
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const setEmbedState = useSetAtom(embedStateAtom);
-    const [fileSrc, setFileSrc] = React.useState<string>(emptyWritingSvg);
+    const [preview, setPreview] = React.useState<InkPreview>();
     const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? [], containerElRef);
 
+    // Read once: the preview is remounted each time the editor closes, which is when it changes.
+    // It used to be reread on every render, which turning pages would make costly on a long file.
     React.useEffect(() => {
-        //console.log('PREVIEW mounted');
         fetchFileData();
-        return () => {
-            //console.log('PREVIEW unmounting');
-        }
-    })
+    }, [])
+
+    const fileSrc = (props.layout && props.page !== undefined
+        ? preview && getPagePreviewSvg(preview, props.layout, props.page)
+        : preview?.previewUri
+    ) || emptyWritingSvg;
 
     // Check if src is a DataURI. If not, it's an SVG
     const isImg = fileSrc.slice(0, 4) === 'data';
@@ -114,6 +125,20 @@ const WritingEmbedPreview: React.FC<WritingEmbedPreviewProps> = (props) => {
             </>)}
 
             <div className="inkc_preview-buttons">
+                {props.onAddPageClick && (
+                    <button
+                        className="inkc_collapse-btn"
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            props.onAddPageClick?.();
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Add page"
+                    >
+                        <AddPageIcon />
+                    </button>
+                )}
                 {props.onFullscreenClick && (
                     <button
                         className="inkc_collapse-btn"
@@ -163,7 +188,7 @@ const WritingEmbedPreview: React.FC<WritingEmbedPreviewProps> = (props) => {
 
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.writingFile)
-        if (inkFileData.previewUri) setFileSrc(inkFileData.previewUri)
+        setPreview(getInkPreview(inkFileData));
     }
 
     function recalcHeight() {

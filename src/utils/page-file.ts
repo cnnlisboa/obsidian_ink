@@ -8,10 +8,19 @@ type Metadata = {
 	pluginVersion: string;
 	tldrawVersion: string;
 	previewIsOutdated?: boolean;
+	/**
+	 * In a paged writing, the pages whose previews are behind their ink, so the next full save
+	 * only redraws those. See src/logic/writing-pages.ts.
+	 */
+	outdatedPages?: number[];
 	/** The handwriting as text. See src/logic/transcription.ts. */
 	transcript?: string;
 	/** Fingerprint of the ink `transcript` was read from, so unchanged writing isn't read again. */
 	transcriptOf?: string;
+	/** In a paged writing, each page's handwriting as text, which `transcript` joins. */
+	pageTranscripts?: string[];
+	/** The fingerprint each of `pageTranscripts` was read from, so only changed pages are reread. */
+	pageTranscriptsOf?: string[];
 	/** Page-coordinate bounds the preview SVG covers. See src/utils/svg-framing.ts. */
 	previewBounds?: { x: number, y: number, w: number, h: number };
 };
@@ -48,6 +57,7 @@ export const getInkPreview = (pageData: InkFileData): InkPreview => ({
 export const buildWritingFileData = (props: {
 	tlEditorSnapshot: TLEditorSnapshot,
 	previewIsOutdated?: boolean;
+	outdatedPages?: number[];
 	transcript?: string;
 	transcriptOf?: string;
 	previewUri?: string,
@@ -70,6 +80,7 @@ export const buildDrawingFileData = (props: {
 const buildFileData = (props: {
 	tlEditorSnapshot: TLEditorSnapshot,
 	previewIsOutdated?: boolean;
+	outdatedPages?: number[];
 	transcript?: string;
 	transcriptOf?: string;
 	previewUri?: string,
@@ -81,6 +92,7 @@ const buildFileData = (props: {
 		tlEditorSnapshot: tlEditorSnapshot,
 		previewUri,
 		previewIsOutdated = false,
+		outdatedPages,
 		pagePreviewUris,
 		previewBounds,
 		transcript,
@@ -96,6 +108,7 @@ const buildFileData = (props: {
 	}
 
 	if(previewIsOutdated) pageData.meta.previewIsOutdated = previewIsOutdated;
+	if(previewIsOutdated && outdatedPages?.length) pageData.meta.outdatedPages = outdatedPages;
 	if(previewBounds) pageData.meta.previewBounds = previewBounds;
 	if(transcript !== undefined) pageData.meta.transcript = transcript;
 	if(transcriptOf !== undefined) pageData.meta.transcriptOf = transcriptOf;

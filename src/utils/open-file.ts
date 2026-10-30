@@ -4,9 +4,10 @@ import InkPlugin from "src/main";
 ////////
 ////////
 
-export async function openInkFile(plugin: InkPlugin, fileRef: TFile, closeSourceLeaf?: WorkspaceLeaf | null) {
+/** Opens an ink file full screen, at `options.page` if it's a paged writing. */
+export async function openInkFile(plugin: InkPlugin, fileRef: TFile, closeSourceLeaf?: WorkspaceLeaf | null, options: { page?: number } = {}) {
     const leafToClose = closeSourceLeaf ?? null;
-    await openInActiveView(plugin, fileRef);
+    await openInActiveView(plugin, fileRef, options);
 
     if (leafToClose) {
         // Only close if the writing file opened in a different leaf
@@ -17,10 +18,11 @@ export async function openInkFile(plugin: InkPlugin, fileRef: TFile, closeSource
     }
 }
 
-export async function openInActiveView(plugin: InkPlugin, fileRef: TFile) {
+export async function openInActiveView(plugin: InkPlugin, fileRef: TFile, options: { page?: number } = {}) {
     let { workspace }  = plugin.app;
 	let leaf = workspace.getLeaf();
-    await leaf.openFile(fileRef);
+    // The page goes as ephemeral state, which the writing view takes up. See WritingView.
+    await leaf.openFile(fileRef, options.page !== undefined ? { eState: { inkcPage: options.page } } : undefined);
 }
 
 // NOTE: Future possible additions

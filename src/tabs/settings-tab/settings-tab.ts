@@ -654,6 +654,20 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			});
 	}
 
+	insertHeading(sectionEl, 'Pages');
+
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
+		.setName('Split long writings into pages')
+		.setDesc('A writing is one long sheet until you add a page to it. With this on, a writing longer than a page is split into pages when you next open it. Nothing written moves; the sheet just gets page breaks.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.writingAutoSplitPages);
+			toggle.onChange(async (value: boolean) => {
+				plugin.settings.writingAutoSplitPages = value;
+				await plugin.saveSettings();
+			});
+		});
+
 	insertHeading(sectionEl, 'Writing performance');
 
 	new Setting(sectionEl)

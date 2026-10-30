@@ -1,0 +1,62 @@
+// See PageControls. In the editor's bottom bar, and under an embed's preview.
+.inkc_page-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    pointer-events: auto;
+
+    button {
+        width: 2.5em;
+        height: 2.5em;
+        border-radius: 0.8em;
+        padding: 0 !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        svg {
+            width: 1.5em !important;
+            height: 1.5em !important;
+            fill: currentColor;
+        }
+
+        &:disabled {
+            opacity: 0.35;
+        }
+    }
+
+    .inkc_page-number {
+        min-width: 3.5em;
+        text-align: center;
+        font-size: var(--font-ui-small);
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    &.inkc_page-label .inkc_page-number {
+        padding: 0 0.5em;
+    }
+}
+
+// Over the page in the editor's bottom bar, so it needs its own ground to read against the ink.
+.ink_secondary-menu-bar .inkc_page-controls {
+    background-color: var(--interactive-normal);
+    border-radius: 0.9em;
+    padding: 2px;
+
+    .inkc_page-number {
+        color: var(--text-normal);
+    }
+}
+
+// Under an embed's preview, right-aligned and clear of the writing. Hidden rather than removed
+// while the editor is open, which has its own, so the note doesn't jump.
+.inkc_embed-page-bar {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+
+    &.inkc_hidden {
+        visibility: hidden;
+    }
+}

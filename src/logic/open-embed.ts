@@ -13,6 +13,8 @@ export interface OpenEmbed {
 	containerEl: HTMLElement,
 	/** Saves and returns the embed to its preview. Safe to call more than once. */
 	close: () => void | Promise<void>,
+	/** The ink file it's editing. */
+	filePath?: string,
 }
 
 let openEmbed: OpenEmbed | null = null;
@@ -26,6 +28,11 @@ export function claimOpenEmbed(embed: OpenEmbed) {
 
 export function releaseOpenEmbed(embed: OpenEmbed) {
 	if (openEmbed === embed) openEmbed = null;
+}
+
+/** Whether an embed's editor is open on `filePath`. */
+export function isEmbedEditorOpenOn(filePath: string): boolean {
+	return openEmbed?.filePath === filePath;
 }
 
 /** Saves and closes whichever embed is open, if any. */

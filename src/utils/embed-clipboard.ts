@@ -94,6 +94,13 @@ export function installEmbedPastePrompt(plugin: InkPlugin) {
 			return;
 		}
 
+		// An embed of one page is a reference by nature: it exists to show part of a writing that
+		// lives elsewhere, and a copy of the whole writing for the sake of one page isn't what's meant.
+		if (parsed.key === WRITE_EMBED_KEY && parsed.data.page !== undefined) {
+			editor.replaceSelection(parsed.block);
+			return;
+		}
+
 		new PasteEmbedModal({
 			plugin,
 			onChoice: async (choice) => {

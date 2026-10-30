@@ -1,7 +1,7 @@
 import { Editor, MarkdownFileInfo, MarkdownView, Notice } from "obsidian";
 import InkPlugin from "src/main";
 import { closeOpenEmbed } from "src/logic/open-embed";
-import { TranscriptionError, canTranscribe, describeTranscriptionError, getSearchableTranscript, transcribeWritingFile } from "src/logic/transcription";
+import { TranscriptionError, WritingTranscript, canTranscribe, describeTranscriptionError, transcribeWritingFile } from "src/logic/transcription";
 import { findInkEmbedsInNote, setWritingEmbedTranscripts } from "src/utils/embed-usage";
 
 ////////
@@ -32,18 +32,18 @@ export async function transcribeNoteHandwriting(plugin: InkPlugin, editor: Edito
 	}
 
 	const progress = new Notice(`Ink: transcribing ${writings.length} handwriting ${writings.length === 1 ? 'section' : 'sections'}…`, 0);
-	const transcripts = new Map<string, string>();
+	const transcripts = new Map<string, WritingTranscript>();
 	let failure: unknown;
 	let downloadNoticeShown = false;
 	for (const { inkFile } of writings) {
 		try {
-			transcripts.set(inkFile.path, getSearchableTranscript(await transcribeWritingFile(plugin, inkFile, {
+			transcripts.set(inkFile.path, await transcribeWritingFile(plugin, inkFile, {
 				onDownloadingModel: () => {
 					if (downloadNoticeShown) return;
 					downloadNoticeShown = true;
 					new Notice('Ink: downloading the handwriting model. This happens once and can take a minute.');
 				},
-			})));
+			}));
 		} catch (e) {
 			failure = e;
 			// Every other section would fail the same way.

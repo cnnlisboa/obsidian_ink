@@ -24,9 +24,11 @@ import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
 import { EmbedTitle } from "src/components/jsx-components/embed-title/embed-title";
 import { EmbedHeightModal } from "src/modals/embed-height-modal/embed-height-modal";
 import { copyEmbedToClipboard } from "src/utils/embed-clipboard";
-import { WRITE_EMBED_KEY } from "src/constants";
+import { PLUGIN_VERSION, WRITE_EMBED_KEY } from "src/constants";
+import { PageLayout, WritingOpenIntent, WritingPagesState, clampPage, getSnapshotLastPage, getSnapshotPageLayout, saveLastPage } from "src/logic/writing-pages";
+import { PageControls, PageLabel } from "../page-controls/page-controls";
 import { useEmbedEditor } from "../use-embed-editor";
-import { canTranscribe, describeTranscriptionError, getSearchableTranscript, readTranscript, transcribeWritingFile } from "src/logic/transcription";
+import { canTranscribe, describeTranscriptionError, getSearchableTranscript, getTranscriptText, readTranscript, transcribeWritingFile } from "src/logic/transcription";
 
 ///////
 ///////
@@ -53,7 +55,14 @@ export const editorActiveAtom = atom<boolean>((get) => {
 export type WritingEditorControls = {
 	saveAndHalt: () => Promise<void>,
 	resize: () => void,
+	goToPage: (page: number) => void,
+	addPage: () => void,
+	removeLastPage: () => void,
 }
+
+// How long after the last page turn in a preview the page is written to the file. Turning through
+// several pages writes once.
+const REMEMBER_PAGE_DELAY_MS = 1000;
 
 export function WritingEmbed (props: {
 	plugin: InkPlugin,
@@ -73,6 +82,25 @@ export function WritingEmbed (props: {
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
 	// How far a height-capped preview was scrolled when the editor was opened from it.
 	const previewScrollPxRef = useRef(0);
+
+	// Pages. See src/logic/writing-pages.ts. An embed of one page (`page` in the codeblock, from 1)
+	// shows only that page; otherwise a paged writing is shown a page at a time, opening on the
+	// page last used. The layout is read from the file as it was when the embed loaded, and kept
+	// up to date by the editor while it's open.
+	const pinnedPage = props.embedData?.page !== undefined ? Math.max(0, Math.round(props.embedData.page) - 1) : undefined;
+	const [pages, setPages] = useState<{ layout?: PageLayout, page: number }>(() => {
+		const layout = getSnapshotPageLayout(props.pageData?.tldraw);
+		if (!layout) return { page: 0 };
+		return { layout, page: pinnedPage ?? getSnapshotLastPage(props.pageData?.tldraw) };
+	});
+	const pagesRef = useRef(pages);
+	pagesRef.current = pages;
+	// A page that doesn't exist, in an embed of one page: shown as a message, not someone else's page.
+	const missingPinnedPage = pinnedPage !== undefined && !!pages.layout && pinnedPage >= pages.layout.pageCount;
+	// What the editor should do as it opens, beyond opening on the page in view.
+	const openIntentRef = useRef<WritingOpenIntent>();
+	const rememberPageTimeoutRef = useRef<number>();
+	const pendingRememberedPageRef = useRef<number>();
 	// const previewFilePath = getPreviewFileResourcePath(props.plugin, props.fileRef)
 	// const [embedId] = useState<string>(nanoid());
 	// const activeEmbedId = useSelector((state: GlobalSessionState) => state.activeEmbedId);
@@ -81,6 +109,7 @@ export function WritingEmbed (props: {
 	const setEmbedState = useSetAtom(embedStateAtom);
 	const embedEditor = useEmbedEditor<WritingEditorControls>({
 		containerElRef: embedContainerElRef,
+		filePath: props.writingFileRef.path,
 		showEditor: () => {
 			verbose('Set WritingEmbedState: loadingEditor');
 			setEmbedState(WritingEmbedState.loadingEditor);
@@ -104,6 +133,59 @@ export function WritingEmbed (props: {
 	const showTitle = props.embedData?.showTitle ?? false;
 	const editorActive = useAtomValue(editorActiveAtom);
 	const embedState = useAtomValue(embedStateAtom);
+
+	// A page turned to in the preview is written to the file shortly after, and straight away if
+	// the embed goes first (the note is closed or scrolled out of CodeMirror's view).
+	React.useEffect(() => () => flushRememberedPage(), []);
+
+	function flushRememberedPage() {
+		window.clearTimeout(rememberPageTimeoutRef.current);
+		const page = pendingRememberedPageRef.current;
+		pendingRememberedPageRef.current = undefined;
+		if (page === undefined) return;
+		saveLastPage(props.plugin, props.writingFileRef, page).catch((e) => warn(['Could not remember the page', e]));
+	}
+
+	function turnPreviewPage(page: number) {
+		if (!pages.layout || pinnedPage !== undefined) return;
+		const target = clampPage(pages.layout, page);
+		setPages({ ...pages, page: target });
+		pendingRememberedPageRef.current = target;
+		window.clearTimeout(rememberPageTimeoutRef.current);
+		rememberPageTimeoutRef.current = window.setTimeout(flushRememberedPage, REMEMBER_PAGE_DELAY_MS);
+	}
+
+	function handlePagesChange(state: WritingPagesState | undefined) {
+		setPages(state ? { layout: state.layout, page: state.page } : { page: 0 });
+	}
+
+	// Through the editor when it's open, or by opening it to do it.
+	function addPage() {
+		if (pinnedPage !== undefined) return;
+		const controls = embedEditor.getControls();
+		if (controls) controls.addPage();
+		else openEditor({ addPage: true });
+	}
+
+	function removeLastPage() {
+		const controls = embedEditor.getControls();
+		if (controls) controls.removeLastPage();
+		else openEditor({ removeLastPage: true });
+	}
+
+	async function copyPageEmbed() {
+		if (!pages.layout) return;
+		const page = pages.page;
+		// Just the page: how the embed it was copied from is displayed doesn't come with it. Its
+		// text does, if it's been read, so search finds the note it's pasted into straight away.
+		const pageText = getSearchableTranscript(await readTranscript(props.plugin, props.writingFileRef, page) ?? '');
+		copyEmbedToClipboard(WRITE_EMBED_KEY, {
+			versionAtEmbed: PLUGIN_VERSION,
+			link: `[[${props.writingFileRef.name}]]`,
+			page: page + 1,
+			...(pageText ? { transcript: pageText } : {}),
+		});
+	}
 
 	function handleCollapsedChange(value: boolean) {
 		setCollapsed(value);
@@ -148,6 +230,19 @@ export function WritingEmbed (props: {
 				await copyEmbedToClipboard(WRITE_EMBED_KEY, props.embedData);
 			}
 		},
+		...(pages.layout ? [{
+			text: 'Copy embed of this page',
+			icon: 'file-input',
+			section: 'inkc-file',
+			action: copyPageEmbed,
+		}] : []),
+		...(pages.layout && pinnedPage === undefined ? [{
+			text: 'Remove last page if empty',
+			icon: 'file-minus',
+			section: 'inkc-display',
+			editsNote: true,
+			action: removeLastPage,
+		}] : []),
 		{
 			text: 'Embed display',
 			icon: 'unfold-vertical',
@@ -183,7 +278,7 @@ export function WritingEmbed (props: {
 				icon: 'clipboard-type',
 				section: 'inkc-text',
 				action: async () => {
-					await navigator.clipboard.writeText(await readTranscript(props.plugin, props.writingFileRef) ?? transcript);
+					await navigator.clipboard.writeText(await readTranscript(props.plugin, props.writingFileRef, pinnedPage) ?? transcript);
 					new Notice('Ink: transcription copied');
 				},
 			},
@@ -192,7 +287,7 @@ export function WritingEmbed (props: {
 				icon: 'text-cursor-input',
 				section: 'inkc-text',
 				editsNote: true,
-				action: async () => props.onInsertText?.(await readTranscript(props.plugin, props.writingFileRef) ?? transcript),
+				action: async () => props.onInsertText?.(await readTranscript(props.plugin, props.writingFileRef, pinnedPage) ?? transcript),
 			},
 		] : []),
 		{
@@ -206,22 +301,30 @@ export function WritingEmbed (props: {
 		},
 	]
 
-	// The editor opens on whatever part of the page the preview was scrolled to, not the top.
-	const openEditor = () => {
-		previewScrollPxRef.current = resizeContainerElRef.current?.scrollTop ?? 0;
+	// The editor opens on whatever part of the page the preview was scrolled to, not the top,
+	// unless it's opening to do something elsewhere, like add a page.
+	function openEditor(intent?: WritingOpenIntent) {
+		if (missingPinnedPage) return;
+		openIntentRef.current = intent;
+		previewScrollPxRef.current = intent ? 0 : resizeContainerElRef.current?.scrollTop ?? 0;
 		embedEditor.open();
-	};
+	}
 
-	const openFullscreen = () => openInkFile(
-		props.plugin,
-		props.writingFileRef,
-		props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-	);
+	// On the page in view, which a whole-writing embed may have turned to since it was saved.
+	const openFullscreen = () => {
+		flushRememberedPage();
+		return openInkFile(
+			props.plugin,
+			props.writingFileRef,
+			props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null,
+			{ page: pages.layout ? pages.page : undefined },
+		);
+	};
 
 	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
 	// everything an embed can do is reachable from one place.
 	const previewMenuOptions = [
-		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', editsNote: true, action: openEditor },
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', editsNote: true, action: () => openEditor() },
 		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
 		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', editsNote: true, action: () => handleCollapsedChange(true) },
 		...commonExtendedOptions,
@@ -309,16 +412,25 @@ export function WritingEmbed (props: {
 					}}
 				>
 
-					<WritingEmbedPreviewWrapper
+					{missingPinnedPage && (
+						<div className="inkc_page-missing">
+							{`This writing has no page ${(pinnedPage ?? 0) + 1}. It has ${pages.layout?.pageCount} ${pages.layout?.pageCount === 1 ? 'page' : 'pages'}.`}
+						</div>
+					)}
+
+					{!missingPinnedPage && <WritingEmbedPreviewWrapper
 						plugin = {props.plugin}
 						scale = {props.embedData?.scale}
 						onResize = {(height: number) => resizeContainer(height)}
 						writingFile = {props.writingFileRef}
 						onCollapseClick = {() => handleCollapsedChange(true)}
 						onFullscreenClick = {openFullscreen}
-						onClick = {openEditor}
+						onClick = {() => openEditor()}
 						menuOptions = {previewMenuOptions}
-					/>
+						layout = {pages.layout}
+						page = {pages.layout ? pages.page : undefined}
+						onAddPageClick = {!pages.layout && pinnedPage === undefined ? addPage : undefined}
+					/>}
 
 					<TldrawWritingEditorWrapper
 						plugin = {props.plugin} // TODO: Try and remove this
@@ -331,6 +443,14 @@ export function WritingEmbed (props: {
 						maxHeight = {props.embedData?.maxHeight}
 						scale = {props.embedData?.scale}
 						getPreviewScrollPx = {() => previewScrollPxRef.current}
+						pinnedPage = {pinnedPage}
+						getOpenIntent = {() => {
+							const intent = openIntentRef.current;
+							openIntentRef.current = undefined;
+							// Opens on the page in view, which may be newer than the one saved.
+							return { page: pagesRef.current.layout ? pagesRef.current.page : undefined, ...intent };
+						}}
+						onPagesChange = {handlePagesChange}
 						onOpenClick = {async () => {
 							// Saved and closed first, so the full screen editor opens on everything
 							// written here and the two never edit the same file at once.
@@ -341,6 +461,20 @@ export function WritingEmbed (props: {
 					/>
 
 				</div>
+
+				{pages.layout && !missingPinnedPage && (
+					<div className={classNames('inkc_embed-page-bar', editorActive && 'inkc_hidden')}>
+						{pinnedPage !== undefined
+							? <PageLabel page = {pinnedPage} />
+							: <PageControls
+								page = {pages.page}
+								pageCount = {pages.layout.pageCount}
+								onTurn = {turnPreviewPage}
+								onAddPage = {addPage}
+							/>
+						}
+					</div>
+				)}
 			</>}
 
 		</div>
@@ -360,10 +494,12 @@ export function WritingEmbed (props: {
 		}
 		const progress = options.notify ? new Notice('Ink: transcribing…', 0) : undefined;
 		try {
-			const text = await transcribeWritingFile(props.plugin, props.writingFileRef, {
+			const result = await transcribeWritingFile(props.plugin, props.writingFileRef, {
 				force: options.force,
 				onDownloadingModel: () => new Notice('Ink: downloading the handwriting model. This happens once and can take a minute.'),
 			});
+			// An embed of one page carries that page's text, so search finds the note showing it.
+			const text = getTranscriptText(result, pinnedPage) ?? '';
 			// Rewriting the codeblock rebuilds the embed, which would close an editor opened since.
 			if (embedEditor.isOpen()) {
 				transcriptPendingRef.current = true;

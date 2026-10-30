@@ -34,6 +34,12 @@ export type WritingEmbedData = {
 	 * inside the capped window, rather than cropping more of it away.
 	 */
 	scale?: number;
+	/**
+	 * Shows only this page of a paged writing, counted from 1, so one writing can be embedded a
+	 * page at a time across different notes. Undefined shows the whole writing, a page at a time,
+	 * opening on the page last used. See src/logic/writing-pages.ts.
+	 */
+	page?: number;
 };
 
 

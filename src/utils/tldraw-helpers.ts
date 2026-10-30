@@ -8,6 +8,7 @@ import { showStrokeLimitTips_maybe } from "src/notices/stroke-limit-notice";
 import { Notice } from "obsidian";
 import { debug, warn, info, error, http, verbose } from "./log-to-console";
 import { isEreader } from "./isEreader";
+import { getDisplayedPage, getDisplayedPageBand, getEditorPageLayout, getStrokePage } from "src/logic/writing-pages";
 
 //////////
 //////////
@@ -334,13 +335,18 @@ export function initWritingCamera(editor: Editor, topMarginPx: number = 0, scale
 
 	// REVIEW: These are currently hard coded to a specific page position
 	let x = containerMargin;
-	let y = topMarginPx;//containerMargin * 2;  // Pushes canvas down an arbitrary amount to prevent the "exit pen mode" button getting in the way
+	// The top of the sheet, or of the page in view, sits just under the top margin.
+	let y = topMarginPx - (getDisplayedPageBand(editor)?.top ?? 0);
 
 	silentlyChangeStore(editor, () => {
 		editor.setCamera({
 			x: x,
 			y: y,
 			z: zoom
+		}, {
+			// An embed that grows to fit locks its camera, and a locked camera ignores setCamera, so
+			// re-placing it (after layout settles, or on turning a page) needs forcing.
+			force: true,
 		})
 	})
 }
@@ -352,13 +358,10 @@ export function fitWritingCameraToWidth(editor: Editor) {
 	const newZoom = canvasWidth / WRITING_PAGE_WIDTH;
 
 	const camera = editor.getCamera();
-	const oldZoom = camera.z || newZoom;
-	// camera.y is in page-space units; scale it so the page-y currently at the
-	// top of the viewport stays at the top after the zoom change.
-	const newY = camera.y * (newZoom / oldZoom);
-
+	// camera.y is in page units and the page y at the top of the viewport is -camera.y whatever
+	// the zoom, so keeping it keeps the user's place. Scaling it by the zoom change used to jump.
 	silentlyChangeStore(editor, () => {
-		editor.setCamera({ x: 0, y: newY, z: newZoom });
+		editor.setCamera({ x: 0, y: camera.y, z: newZoom });
 	});
 }
 
@@ -408,9 +411,18 @@ export function getWritingLineHeight(editor: Editor): number {
 }
 
 export function getWritingCameraYBounds(editor: Editor, topMarginPx: number = MENUBAR_HEIGHT_PX): { yMin: number; yMax: number } {
-	const bounds = editor.getCurrentPageBounds();
 	const zoom = editor.getZoomLevel();
 	const viewportH = editor.getViewportScreenBounds().h;
+
+	// A page in view bounds the camera to itself, top to bottom edge. Its last line already has
+	// room below it, so no extra margin.
+	const band = getDisplayedPageBand(editor);
+	if (band) {
+		const yMax = topMarginPx - band.top;
+		return { yMin: Math.min(yMax, viewportH / zoom - band.bottom), yMax };
+	}
+
+	const bounds = editor.getCurrentPageBounds();
 	const BOTTOM_MARGIN_PX = 50;
 
 	// Upper limit: can't scroll above where the first line is visible (below the menubar in
@@ -535,8 +547,8 @@ function getIncompleteShapes(editor: Editor) {
 }
 
 /**
- * The page y above which strokes may be stashed: half a viewport above what's on screen, so a short
- * scroll up doesn't uncover strokes still on their way back.
+ * The page y above which strokes may be stashed for speed: half a viewport above what's on screen,
+ * so a short scroll up doesn't uncover strokes still on their way back.
  */
 function getStashLine(editor: Editor): number {
 	const viewport = editor.getViewportPageBounds();
@@ -549,39 +561,56 @@ export const useStash = (plugin: InkPlugin) => {
 	const stashedMaxY = useRef(new Map<TLShapeId, number>());
 
 	/**
-	 * Takes the oldest strokes off the page while the editor is open, to keep writing fast on long
-	 * files. Only strokes entirely above the screen go, topmost first: hiding the top of the page
-	 * by position alone used to blank whatever the user had scrolled up to read. Keeping everything
-	 * below also keeps the content's bottom edge intact, which the camera bounds and the template's
-	 * resizing both measure from the live store.
+	 * Takes strokes off the canvas while the editor is open. In a paged writing, every page but the
+	 * one in view goes. Then, to keep writing fast on long files, the oldest strokes go, but only
+	 * those entirely above the screen, topmost first: hiding the top of the page by position alone
+	 * used to blank whatever the user had scrolled up to read. Keeping everything below also keeps
+	 * the content's bottom edge intact, which the camera bounds and the template's resizing both
+	 * measure from the live store.
 	 */
 	const stashStaleContent = (editor: Editor) => {
-		// Inserting space moves everything below a point, so every stroke has to be on the page
-		// while that tool is out. The writing editor unstashes when it's picked up.
+		// Inserting space moves everything below a point, so every stroke on the page has to be on
+		// the canvas while that tool is out. The writing editor unstashes when it's picked up.
 		if (editor.getCurrentToolId() === INSERT_SPACE_TOOL_ID) return;
 		// Only ink is stashed.
 		const completeShapes = getCompleteShapes(editor).filter(shape => isInkShapeType(shape.type));
+
+		const layout = getEditorPageLayout(editor);
+		const page = getDisplayedPage(editor);
+		const staleShapeIds: TLShapeId[] = [];
+		const staleShapes: TLShape[] = [];
+		const take = (shape: TLShape) => {
+			staleShapeIds.push(shape.id);
+			staleShapes.push(shape);
+			stashedMaxY.current.set(shape.id, editor.getShapePageBounds(shape)?.maxY ?? Infinity);
+		};
+
+		let onPage = completeShapes;
+		if (layout && page !== undefined) {
+			onPage = [];
+			for (const shape of completeShapes) {
+				if (getStrokePage(layout, shape) === page) onPage.push(shape);
+				else take(shape);
+			}
+		}
 
 		// On e-readers, cap the live-shape limit lower so fewer <path> elements have to repaint.
 		const effectiveLimit = isEreader()
 			? Math.min(plugin.settings.writingStrokeLimit, WRITE_STROKE_LIMIT_EREADER)
 			: plugin.settings.writingStrokeLimit;
-		const excess = completeShapes.length - effectiveLimit;
-		if (excess <= 0) return;
+		const excess = onPage.length - effectiveLimit;
+		let stashedForSpeed = 0;
 
-		const stashLine = getStashLine(editor);
-		const staleShapeIds: TLShapeId[] = [];
-		const staleShapes: TLShape[] = [];
-
-		// Sorted by y, so this works down from the top of the page.
-		for (const shape of completeShapes) {
-			if (staleShapes.length >= excess) break;
-			const maxY = editor.getShapePageBounds(shape)?.maxY;
-			if (maxY === undefined || maxY >= stashLine) continue;
-
-			staleShapeIds.push(shape.id);
-			staleShapes.push(shape);
-			stashedMaxY.current.set(shape.id, maxY);
+		if (excess > 0) {
+			const stashLine = getStashLine(editor);
+			// Sorted by y, so this works down from the top of the page.
+			for (const shape of onPage) {
+				if (stashedForSpeed >= excess) break;
+				const maxY = editor.getShapePageBounds(shape)?.maxY;
+				if (maxY === undefined || maxY >= stashLine) continue;
+				take(shape);
+				stashedForSpeed++;
+			}
 		}
 		if (staleShapes.length === 0) return;
 
@@ -592,7 +621,8 @@ export const useStash = (plugin: InkPlugin) => {
 
 		try {
 			// REVIEW: This often throws an error on ipad. I'm not sure why.
-			if(staleShapeIds.length >= 5) showStrokeLimitTips_maybe(plugin);
+			// Only for strokes hidden for speed; other pages being put away isn't news.
+			if(stashedForSpeed >= 5) showStrokeLimitTips_maybe(plugin);
 		} catch(error) {
 			verbose('Error from stashing stale content (when calling showStrokeLimitTips_maybe)', error);
 		}
@@ -607,16 +637,14 @@ export const useStash = (plugin: InkPlugin) => {
 		stashedMaxY.current.clear();
 	};
 
-	/** Puts back the stashed strokes the user has scrolled up to, leaving the rest stashed. */
-	const unstashScrolledIntoView = (editor: Editor) => {
+	/** Puts back the stashed strokes that match `shouldReturn`, leaving the rest stashed. */
+	const unstashWhere = (editor: Editor, shouldReturn: (shape: TLShape, maxY: number) => boolean) => {
 		if (stash.current.length === 0) return;
-		const stashLine = getStashLine(editor);
-
 		const returning: TLShape[] = [];
 		const staying: TLShape[] = [];
 		for (const shape of stash.current) {
 			const maxY = stashedMaxY.current.get(shape.id) ?? Infinity;
-			(maxY >= stashLine ? returning : staying).push(shape);
+			(shouldReturn(shape, maxY) ? returning : staying).push(shape);
 		}
 		if (returning.length === 0) return;
 
@@ -627,10 +655,36 @@ export const useStash = (plugin: InkPlugin) => {
 		});
 	};
 
+	/** Whether a stashed stroke belongs on the canvas as things stand: on the page in view, if any. */
+	const isOnDisplayedPage = (editor: Editor) => {
+		const layout = getEditorPageLayout(editor);
+		const page = getDisplayedPage(editor);
+		return (shape: TLShape) => !layout || page === undefined || getStrokePage(layout, shape) === page;
+	};
+
+	/** Puts back the stashed strokes the user has scrolled up to, leaving the rest stashed. */
+	const unstashScrolledIntoView = (editor: Editor) => {
+		const stashLine = getStashLine(editor);
+		const onPage = isOnDisplayedPage(editor);
+		unstashWhere(editor, (shape, maxY) => onPage(shape) && maxY >= stashLine);
+	};
+
+	/** Puts back every stroke of the page in view (or of the whole sheet, if it isn't paged). */
+	const unstashDisplayedPage = (editor: Editor) => {
+		unstashWhere(editor, isOnDisplayedPage(editor));
+	};
+
+	/** The lowest point any stashed stroke reaches, or -Infinity with nothing stashed. */
+	const getStashedBottom = (): number => {
+		let bottom = -Infinity;
+		stashedMaxY.current.forEach((maxY) => { if (maxY > bottom) bottom = maxY; });
+		return bottom;
+	};
+
 	// Read-only accessor so callers can build merged snapshots without mutating the live store.
 	const getStashedShapes = (): TLShape[] => stash.current;
 
-	return { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, getStashedShapes };
+	return { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, unstashDisplayedPage, getStashedBottom, getStashedShapes };
 };
 
 export const hideWritingTemplate = (editor: Editor) => {
@@ -1035,6 +1089,8 @@ export function cropWritingStrokeHeightInvitingly(height: number, lineHeight: nu
  */
 export const resizeWritingTemplateInvitingly = (editor: Editor, minHeight?: number) => {
 	verbose('resizeWritingTemplateInvitingly');
+	// Pages are a fixed size. See src/logic/writing-pages.ts.
+	if (getEditorPageLayout(editor)) return;
 
 	let contentBounds = getAllStrokeBounds(editor);
 	if (!contentBounds) return;
@@ -1079,6 +1135,8 @@ export const resizeWritingTemplateInvitingly = (editor: Editor, minHeight?: numb
  */
 export const removeWritingLine = (editor: Editor) => {
 	verbose('removeWritingLine');
+	// Pages are a fixed size. See src/logic/writing-pages.ts.
+	if (getEditorPageLayout(editor)) return;
 
 	const writingLinesShape = getWritingLinesShape(editor);
 	const writingContainerShape = getWritingContainerShape(editor);
@@ -1112,6 +1170,8 @@ export const removeWritingLine = (editor: Editor) => {
  */
 export const addWritingLines = (editor: Editor, lineCount: number = 5) => {
 	verbose('addWritingLines');
+	// Pages are a fixed size. See src/logic/writing-pages.ts.
+	if (getEditorPageLayout(editor)) return;
 
 	const writingLinesShape = getWritingLinesShape(editor);
 	const writingContainerShape = getWritingContainerShape(editor);
@@ -1150,6 +1210,8 @@ export const addWritingLines = (editor: Editor, lineCount: number = 5) => {
  */
 export const resizeWritingTemplateTightly = (editor: Editor) => {
 	verbose('resizeWritingTemplateTightly')
+	// Pages are a fixed size. See src/logic/writing-pages.ts.
+	if (getEditorPageLayout(editor)) return;
 	let contentBounds = getAllStrokeBounds(editor);
 	if (!contentBounds) return;
 

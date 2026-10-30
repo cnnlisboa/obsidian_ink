@@ -31,6 +31,9 @@ import { SecondaryMenuBar } from '../secondary-menu-bar/secondary-menu-bar';
 import ModifyMenu from '../modify-menu/modify-menu';
 import { ScrollButtons } from '../scroll-buttons/scroll-buttons';
 import { FocusModeButton, FocusModeControls } from '../focus-mode-button/focus-mode-button';
+import { AddPageButton, PageControls } from '../page-controls/page-controls';
+import { PageLayout, WritingOpenIntent, WritingPagesState, appendPage, assembleSheetSvg, clampPage, getA4PageHeight, getDisplayedPage, getDisplayedPageBand, getEditorPageLayout, getStrokePage, getWritingPageSvg, removeLastPage, setDisplayedPage, setLastPage, splitIntoPages } from 'src/logic/writing-pages';
+import { Notice } from 'obsidian';
 
 ///////
 ///////
@@ -50,6 +53,14 @@ interface TldrawWritingEditorProps {
 	// How far a capped embed's preview was scrolled, in px, so the editor opens on the same part
 	// of the page.
 	getPreviewScrollPx?: () => number,
+
+	// Pages. See src/logic/writing-pages.ts.
+	// An embed of a single page (from 0): it shows only that page and can't turn to another.
+	pinnedPage?: number,
+	// Where the editor opens and what it does first. Read once, as it mounts.
+	getOpenIntent?: () => WritingOpenIntent | undefined,
+	// Told the page in view whenever it or the number of pages changes.
+	onPagesChange?: (pages: WritingPagesState | undefined) => void,
 
 	// For embeds
 	embedded?: boolean,
@@ -100,7 +111,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	const longDelayPostProcessTimeoutRef = useRef<NodeJS.Timeout>();
 	const tlEditorRef = useRef<Editor>();
 	const editorWrapperRefEl = useRef<HTMLDivElement>(null);
-	const { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, getStashedShapes } = useStash(props.plugin);
+	const { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, unstashDisplayedPage, getStashedBottom, getStashedShapes } = useStash(props.plugin);
 	const cameraLimitsRef = useRef<WritingCameraLimits>();
 	// The last preview generated for this file, carried forward by saves that don't regenerate it.
 	// See InkPreview.
@@ -108,7 +119,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// True from the moment a stroke schedules a save until one is written. See the onMount teardown.
 	const savePendingRef = useRef<boolean>(false);
 	// The file's transcript, which the editor doesn't produce but mustn't drop when it saves.
-	const transcriptRef = useRef<{ transcript?: string, transcriptOf?: string }>({});
+	const transcriptRef = useRef<{ transcript?: string, transcriptOf?: string, pageTranscripts?: string[], pageTranscriptsOf?: string[] }>({});
 	const bridgeClientRef = useRef<CompanionBridgeClient>();
 	// Where the viewport's (0,0) sits on the physical screen, in CSS px — {0,0} until a real pen
 	// event calibrates it. See "Coordinate calibration" in COMPANION_APP_RESEARCH.md.
@@ -119,6 +130,17 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// Tracks the lowest page-y reached by any draw shape's points. Used to skip
 	// resizeWritingTemplateInvitingly when the existing container still has room.
 	const lastContentMaxYRef = useRef<number>(0);
+	// The page in view and the page count, for the page controls. Undefined while it's one sheet.
+	const [pages, setPages] = React.useState<WritingPagesState>();
+	// Whether ink has changed since the preview was last drawn, and in a paged writing, which
+	// pages' previews that leaves behind. Seeded from the file, so an interrupted session's
+	// outdated previews are still caught up.
+	const inkChangedSinceSvgRef = useRef<boolean>(false);
+	const outdatedPagesRef = useRef<Set<number>>(new Set());
+	const allPagesOutdatedRef = useRef<boolean>(false);
+	const pageSaveTimeoutRef = useRef<NodeJS.Timeout>();
+	// Full saves run one at a time. See completeSave.
+	const completeSaveChainRef = useRef<Promise<void>>(Promise.resolve());
 
 	const initialStylusOnly = props.plugin.settings.stylusOnlyInput || isEreader();
 	const stylusOnlyRef = useRef<boolean>(initialStylusOnly);
@@ -186,6 +208,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		setPaperState(getWritingLinesShape(editor)?.props.paper ?? 'lines');
 
 		updateWritingStoreIfNeeded(editor);
+		const openIntent = initPages(editor);
 
 		// tldraw content setup
 		adaptTldrawToObsidianThemeMode(editor);
@@ -193,21 +216,11 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		resizeContainerIfEmbed(editor);	// Has an effect if the embed is new and started at 0
 
 		// view set up
-		//
-		// A grow-to-fit embed locks its camera and lets the container grow instead. A capped embed
-		// can't do that - the whole point is that the container stays put - so it takes the
-		// fullscreen treatment (unlocked, bounded) with no menubar margin above the page.
 		const cappedEmbedCamera = !!props.embedded && !!props.maxHeight;
-		if(props.embedded && !cappedEmbedCamera) {
-			initWritingCamera(editor, 0, props.scale);
-			editor.setCameraOptions({
-				isLocked: true,
-			})
-		} else {
-			initWritingCamera(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX, props.scale);
-			cameraLimitsRef.current = initWritingCameraLimits(editor);
-			if(cappedEmbedCamera) scrollToPreviewPosition(editor);
-		}
+		// The preview's scroll position belongs to the page it showed; adding a page opens elsewhere.
+		const followPreviewScroll = cappedEmbedCamera && !openIntent?.addPage;
+		placeCamera(editor);
+		if(followPreviewScroll) scrollToPreviewPosition(editor);
 
 		// Prime the stash once after load so the live store starts under the limit on large files.
 		// After the camera is placed, since what's stashed depends on what's on screen.
@@ -220,14 +233,8 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 		// Re-init camera after layout settles to ensure correct dimensions
 		requestAnimationFrame(() => {
-			if(props.embedded && !cappedEmbedCamera) {
-				initWritingCamera(editor, 0, props.scale);
-				editor.setCameraOptions({ isLocked: true });
-			} else {
-				initWritingCamera(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX, props.scale);
-				cameraLimitsRef.current = initWritingCameraLimits(editor);
-				if(cappedEmbedCamera) scrollToPreviewPosition(editor);
-			}
+			placeCamera(editor);
+			if(followPreviewScroll) scrollToPreviewPosition(editor);
 
 			// Companion bridge (experimental) — gated only by its own setting (not isEreader())
 			// so it can be exercised on desktop against a mock server during development.
@@ -242,6 +249,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		// Runs on any USER caused change to the store, (Anything wrapped in silently change method doesn't call this).
 		const removeUserActionListener = editor.store.listen((entry) => {
 
+			markOutdatedPages(editor, entry);
 			const activity = getActivityType(entry);
 			switch (activity) {
 				case Activity.PointerMoved:
@@ -266,6 +274,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 					break;
 
 				case Activity.DrawingCompleted:
+					removeOffPageStrokes(editor, entry);
 					updateContentMaxYFromEntry(entry);
 					if (props.plugin.settings.writingScratchOut) eraseScratchOuts(editor, entry);
 					queueOrRunStorePostProcesses(editor);
@@ -294,30 +303,52 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			scope: 'all'	// Filters some things like camera movement changes. But Not sure it's locked down enough, so leaving as all.
 		})
 
-		// Keyboard arrow key scrolling
+		// Keys that move through the writing. Listened for on tldraw's container, which keeps focus
+		// and holds the canvas: a listener on the canvas itself never heard a key, so until pages
+		// these never worked anywhere. In an embed they're still left to the note, as they were.
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.target !== tlCanvas && !(tlCanvas as HTMLElement)?.contains(e.target as Node)) return;
 			const scrollKeys: Record<string, number> = {
 				ArrowDown: 80, ArrowUp: -80, PageDown: 400, PageUp: -400,
 			};
 			const delta = scrollKeys[e.key];
 			if (delta === undefined) return;
+			// Arrows nudge a selection in tldraw.
+			if (e.key.startsWith('Arrow') && editor.getSelectedShapeIds().length > 0) return;
 
-			e.preventDefault();
-			const scrollContainer = editorWrapperRefEl.current?.closest('.cm-scroller') as HTMLElement;
-			if (scrollContainer) {
-				scrollContainer.scrollBy({ top: delta, behavior: isEreader() ? 'auto' : 'smooth' });
+			// A paged writing turns the page instead, as a reader would.
+			const page = getDisplayedPage(editor);
+			if (page !== undefined && (e.key === 'PageDown' || e.key === 'PageUp')) {
+				e.preventDefault();
+				goToPage(editor, page + (e.key === 'PageDown' ? 1 : -1));
 				return;
 			}
+			if (props.embedded) return;
+
+			e.preventDefault();
 			const cam = editor.getCamera();
-			const { yMin: kbYMin, yMax: kbYMax } = getWritingCameraYBounds(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX);
-			const newY = Math.max(kbYMin, Math.min(kbYMax, cam.y - delta));
+			const { yMin: kbYMin, yMax: kbYMax } = getWritingCameraYBounds(editor, MENUBAR_HEIGHT_PX);
+			const newY = Math.max(kbYMin, Math.min(kbYMax, cam.y - delta / (cam.z || 1)));
 			silentlyChangeStore(editor, () => {
 				editor.setCamera({ x: cam.x, y: newY, z: cam.z });
 			});
 		};
 		const tlCanvas = editorWrapperRefEl.current?.querySelector('.tl-canvas') as HTMLElement;
-		if (tlCanvas) tlCanvas.addEventListener('keydown', handleKeyDown);
+		const keyTarget = editorWrapperRefEl.current?.querySelector('.tl-container') as HTMLElement | null;
+		keyTarget?.addEventListener('keydown', handleKeyDown);
+
+		// Ink can only start on the page in view. Where the view is taller than the page, as in full
+		// screen, what's below it is the desk, and ink there would land on the next page unseen.
+		const handlePagePointer = (e: PointerEvent) => {
+			const band = getDisplayedPageBand(editor);
+			if (!band) return;
+			const tool = editor.getCurrentToolId();
+			if (tool !== 'draw' && tool !== 'highlight') return;
+			const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+			if (point.y >= band.top && point.y <= band.bottom) return;
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		if (tlCanvas) tlCanvas.addEventListener('pointerdown', handlePagePointer, { capture: true });
 
 		// Companion bridge input ownership + calibration.
 		//
@@ -416,8 +447,9 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			});
 		});
 
-		// Inserting space has to move every stroke, including the old ones stashed to keep writing
-		// fast, so they're put back on the page while that tool is out and stashed again after.
+		// Inserting space has to move every stroke on the page, including the old ones stashed to keep
+		// writing fast, so they're put back while that tool is out and stashed again after. In a paged
+		// writing that's this page's: space inserted on one page doesn't push the others about.
 		let wasInsertingSpace = false;
 		const stopInsertSpaceWatch = react('unstash while inserting space', () => {
 			const insertingSpace = editor.getCurrentToolId() === INSERT_SPACE_TOOL_ID;
@@ -428,7 +460,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			queueMicrotask(() => {
 				if (editor.isDisposed) return;
 				if (insertingSpace) {
-					unstashStaleContent(editor);
+					unstashDisplayedPage(editor);
 				} else {
 					stashStaleContent(editor);
 				}
@@ -438,12 +470,14 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		const unmountActions = () => {
 			// NOTE: This prevents the postProcessTimer completing when a new file is open and saving over that file.
 			resetInputPostProcessTimers();
+			clearTimeout(pageSaveTimeoutRef.current);
+			keyTarget?.removeEventListener('keydown', handleKeyDown);
 			removeUserActionListener();
 			stopInsertSpaceWatch();
 			stopUnstashWatch();
 			cancelAnimationFrame(unstashFrame);
 			if (tlCanvas) {
-				tlCanvas.removeEventListener('keydown', handleKeyDown);
+				tlCanvas.removeEventListener('pointerdown', handlePagePointer, { capture: true });
 				for (const name of bridgePointerEventNames) {
 					tlCanvas.removeEventListener(name, handleBridgePointer as EventListener, { capture: true });
 				}
@@ -470,7 +504,10 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 					const cameraY = camera.y;
 					initWritingCamera(editor);
 					editor.setCamera({x: camera.x, y: cameraY})
-				}
+				},
+				goToPage: (page: number) => goToPage(editor, page),
+				addPage: () => addPage(editor),
+				removeLastPage: () => removeEmptyLastPage(editor),
 			})
 		}
 		
@@ -547,14 +584,15 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		return { color: '#000000', width: 2 };
 	}
 
-	// The preview is drawn at the editor's zoom, from the top of the page, so its scrolled px over
-	// the zoom are page units.
+	// The preview is drawn at the editor's zoom, from the top of the sheet or of the page it shows,
+	// so its scrolled px over the zoom are page units down from there.
 	function scrollToPreviewPosition(editor: Editor) {
 		const scrolledPx = props.getPreviewScrollPx?.() ?? 0;
 		if (scrolledPx <= 0) return;
 		const camera = editor.getCamera();
 		const { yMin, yMax } = getWritingCameraYBounds(editor, 0);
-		const y = Math.max(yMin, Math.min(yMax, -scrolledPx / camera.z));
+		const top = getDisplayedPageBand(editor)?.top ?? 0;
+		const y = Math.max(yMin, Math.min(yMax, -(top + scrolledPx / camera.z)));
 		silentlyChangeStore(editor, () => {
 			editor.setCamera({ x: camera.x, y, z: camera.z });
 		});
@@ -564,7 +602,10 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		if (!props.embedded || !props.onResize) return;
 
 		const embedBounds = editor.getViewportScreenBounds();
-		const contentBounds = getWritingContainerBounds(editor);
+		const band = getDisplayedPageBand(editor);
+		const contentBounds = band
+			? new Box(0, band.top, WRITING_PAGE_WIDTH, band.bottom - band.top)
+			: getWritingContainerBounds(editor);
 
 		if (contentBounds) {
 			const contentRatio = contentBounds.w / contentBounds.h;
@@ -585,8 +626,184 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 	}
 
+	// A grow-to-fit embed locks its camera and lets the container grow instead. A capped embed
+	// can't do that - the whole point is that the container stays put - so it takes the
+	// fullscreen treatment (unlocked, bounded) with no menubar margin above the page.
+	// Either way the camera starts at the top of the sheet, or of the page in view.
+	function placeCamera(editor: Editor) {
+		const cappedEmbedCamera = !!props.embedded && !!props.maxHeight;
+		if(props.embedded && !cappedEmbedCamera) {
+			initWritingCamera(editor, 0, props.scale);
+			editor.setCameraOptions({ isLocked: true });
+		} else {
+			initWritingCamera(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX, props.scale);
+			cameraLimitsRef.current = initWritingCameraLimits(editor);
+		}
+	}
+
+	////////
+	//////// Pages. See src/logic/writing-pages.ts.
+	////////
+
+	// How far down the sheet anything is written, stashed strokes included.
+	function getContentBottom(editor: Editor): number {
+		let bottom = getStashedBottom();
+		for (const shape of editor.getCurrentPageShapes()) {
+			if (!isInkShapeType(shape.type)) continue;
+			const maxY = editor.getShapePageBounds(shape)?.maxY;
+			if (maxY !== undefined && maxY > bottom) bottom = maxY;
+		}
+		return Math.max(0, bottom);
+	}
+
+	// Splits a long sheet if the setting asks, picks the page to open on, and carries out whatever
+	// the editor was opened to do. Returns that intent.
+	function initPages(editor: Editor): WritingOpenIntent | undefined {
+		const intent = props.getOpenIntent?.();
+
+		if (!getEditorPageLayout(editor) && props.plugin.settings.writingAutoSplitPages && props.pinnedPage === undefined) {
+			const lineHeight = getWritingLineHeight(editor);
+			const contentBottom = getContentBottom(editor);
+			if (contentBottom > getA4PageHeight(lineHeight)) {
+				splitIntoPages(editor, contentBottom);
+				outdatedPagesRef.current.clear();
+				allPagesOutdatedRef.current = true;
+			}
+		}
+
+		const layout = getEditorPageLayout(editor);
+		if (layout) {
+			const page = clampPage(layout, props.pinnedPage ?? intent?.page ?? getWritingLinesShape(editor)?.props.lastPage ?? 0);
+			setDisplayedPage(editor, page);
+			// A full view opened on a page (from an embed of it, or one turned in a preview) has
+			// been to it, as much as if it had turned there.
+			if (page !== getWritingLinesShape(editor)?.props.lastPage) rememberPage(editor, page);
+		}
+
+		if (intent?.addPage) addPage(editor, { placeCamera: false });
+		else if (intent?.removeLastPage) removeEmptyLastPage(editor, { placeCamera: false });
+		reportPages(editor);
+		return intent;
+	}
+
+	function reportPages(editor: Editor) {
+		const layout = getEditorPageLayout(editor);
+		const page = getDisplayedPage(editor);
+		const state = layout && page !== undefined ? { layout, page } : undefined;
+		setPages(state);
+		props.onPagesChange?.(state);
+	}
+
+	function goToPage(editor: Editor, page: number, options: { placeCamera?: boolean } = {}) {
+		const layout = getEditorPageLayout(editor);
+		if (!layout || props.pinnedPage !== undefined) return;
+		const target = clampPage(layout, page);
+		if (target === getDisplayedPage(editor)) return;
+
+		editor.selectNone();
+		// Undo reaches back over what's on screen; strokes on other pages are off the canvas.
+		editor.clearHistory();
+		setDisplayedPage(editor, target);
+		if (options.placeCamera !== false) placeCamera(editor);
+		unstashDisplayedPage(editor);
+		stashStaleContent(editor);
+		rememberPage(editor, target);
+		reportPages(editor);
+	}
+
+	// A full view of the writing opens where it was left. Written with a light save of its own,
+	// since turning a page changes no ink and needn't wait for, or cause, a preview to be drawn.
+	function rememberPage(editor: Editor, page: number) {
+		if (props.pinnedPage !== undefined) return;
+		setLastPage(editor, page);
+		clearTimeout(pageSaveTimeoutRef.current);
+		savePendingRef.current = true;
+		pageSaveTimeoutRef.current = setTimeout(() => incrementalSave(editor), WRITE_LONG_DELAY_MS);
+	}
+
+	function addPage(editor: Editor, options: { placeCamera?: boolean } = {}) {
+		if (props.pinnedPage !== undefined) return;
+		const wasPaged = !!getEditorPageLayout(editor);
+		if (!wasPaged) {
+			splitIntoPages(editor, getContentBottom(editor));
+			outdatedPagesRef.current.clear();
+			allPagesOutdatedRef.current = true;
+		}
+		const page = appendPage(editor);
+		outdatedPagesRef.current.add(page);
+		goToPage(editor, page, options);
+		// An embed of the whole sheet becomes an embed of one page.
+		if (!wasPaged) resizeContainerIfEmbed(editor);
+		queueSaves(editor);
+	}
+
+	// Only an empty last page can go: page numbers are how embeds of one page find theirs.
+	function removeEmptyLastPage(editor: Editor, options: { placeCamera?: boolean } = {}) {
+		const layout = getEditorPageLayout(editor);
+		if (!layout || props.pinnedPage !== undefined) return;
+		if (layout.pageCount <= 1) {
+			new Notice('Ink: a writing keeps at least one page.');
+			return;
+		}
+		const last = layout.pageCount - 1;
+		const inkOnLast = [...editor.getCurrentPageShapes(), ...getStashedShapes()]
+			.some((shape) => isInkShapeType(shape.type) && getStrokePage(layout, shape) === last);
+		if (inkOnLast) {
+			new Notice(`Ink: page ${last + 1} has writing on it, so it was kept.`);
+			return;
+		}
+		if (getDisplayedPage(editor) === last) goToPage(editor, last - 1, options);
+		removeLastPage(editor);
+		outdatedPagesRef.current.delete(last);
+		const previews = lastPreviewRef.current.pagePreviewUris;
+		if (previews) lastPreviewRef.current = { ...lastPreviewRef.current, pagePreviewUris: previews.slice(0, last) };
+		reportPages(editor);
+		queueSaves(editor);
+	}
+
+	// Which pages' previews an edit leaves behind: wherever the strokes it touched were and are.
+	function markOutdatedPages(editor: Editor, entry: HistoryEntry<TLRecord>) {
+		const layout = getEditorPageLayout(editor);
+		if (!layout) return;
+		const mark = (record: TLRecord) => {
+			if (record.typeName !== 'shape' || !isInkShapeType(record.type)) return;
+			outdatedPagesRef.current.add(getStrokePage(layout, record as TLDrawShape));
+		};
+		Object.values(entry.changes.added).forEach(mark);
+		Object.values(entry.changes.removed).forEach(mark);
+		Object.values(entry.changes.updated).forEach(([before, after]) => { mark(before); mark(after); });
+	}
+
+	// Ink drawn through the companion bridge doesn't pass the pointer guard in handleMount, so a
+	// stroke started off the page in view is taken away once it's finished rather than being left
+	// on a page the user can't see.
+	function removeOffPageStrokes(editor: Editor, entry: HistoryEntry<TLRecord>) {
+		const layout = getEditorPageLayout(editor);
+		const page = getDisplayedPage(editor);
+		if (!layout || page === undefined) return;
+		const offPage: TLShapeId[] = [];
+		const check = (record: TLRecord) => {
+			if (record.typeName !== 'shape' || !isInkShapeType(record.type)) return;
+			if (getStrokePage(layout, record as TLDrawShape) !== page) offPage.push(record.id as TLShapeId);
+		};
+		Object.values(entry.changes.added).forEach(check);
+		Object.values(entry.changes.updated).forEach(([, after]) => check(after));
+		if (offPage.length === 0) return;
+		silentlyChangeStore(editor, () => {
+			editor.store.remove(offPage);
+		});
+	}
+
 	const queueOrRunStorePostProcesses = (editor: Editor) => {
+		inkChangedSinceSvgRef.current = true;
+		const page = getDisplayedPage(editor);
+		if (page !== undefined) outdatedPagesRef.current.add(page);
 		instantInputPostProcess(editor);
+		queueSaves(editor);
+	}
+
+	// Saves soon, and redraws the preview once things settle.
+	const queueSaves = (editor: Editor) => {
 		smallDelayInputPostProcess(editor);
 		longDelayInputPostProcess(editor);
 	}
@@ -695,25 +912,43 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// Every save goes through here, so the teardown flush knows whether one is still owed.
 	const saveFileData = (pageData: InkFileData) => {
 		savePendingRef.current = false;
-		const { transcript, transcriptOf } = transcriptRef.current;
+		const { transcript, transcriptOf, pageTranscripts, pageTranscriptsOf } = transcriptRef.current;
 		if (transcript !== undefined) pageData.meta.transcript = transcript;
 		if (transcriptOf !== undefined) pageData.meta.transcriptOf = transcriptOf;
+		if (pageTranscripts !== undefined) pageData.meta.pageTranscripts = pageTranscripts;
+		if (pageTranscriptsOf !== undefined) pageData.meta.pageTranscriptsOf = pageTranscriptsOf;
 		props.save(pageData);
 	}
 
+	// Writes the ink with the last previews, marked as behind it if they are.
 	const incrementalSave = async (editor: Editor) => {
 		verbose('incrementalSave');
+		clearTimeout(pageSaveTimeoutRef.current);
 		const tlEditorSnapshot = buildMergedSnapshot(editor);
+		const layout = getEditorPageLayout(editor);
 
 		const pageData = buildWritingFileData({
 			tlEditorSnapshot: tlEditorSnapshot,
 			previewUri: lastPreviewRef.current.previewUri,
-			previewIsOutdated: true,
+			pagePreviewUris: layout ? lastPreviewRef.current.pagePreviewUris : undefined,
+			previewIsOutdated: inkChangedSinceSvgRef.current || allPagesOutdatedRef.current || outdatedPagesRef.current.size > 0,
+			outdatedPages: layout && !allPagesOutdatedRef.current ? [...outdatedPagesRef.current] : undefined,
 		})
 		saveFileData(pageData);
 	}
 
-	const completeSave = async (editor: Editor, forceSvg: boolean = false): Promise<void> => {
+	// Full saves run one after another. Drawing previews is asynchronous, and two at once (the
+	// timer's and the one on closing) let the second find nothing marked outdated, since the first
+	// had already taken the marks, and write the old previews over the new.
+	const completeSave = (editor: Editor, forceSvg: boolean = false): Promise<void> => {
+		const run = completeSaveChainRef.current
+			.catch(() => undefined)
+			.then(() => runCompleteSave(editor, forceSvg));
+		completeSaveChainRef.current = run;
+		return run;
+	}
+
+	const runCompleteSave = async (editor: Editor, forceSvg: boolean = false): Promise<void> => {
 		verbose('completeSave');
 
 		// On e-readers during active writing, skip SVG preview generation — it's the
@@ -721,17 +956,15 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		// when the file is rendered as an embed (never while the user is writing).
 		// saveAndHalt passes forceSvg=true so the closing snapshot still gets a preview.
 		if (isEreader() && !forceSvg) {
-			const tlEditorSnapshot = buildMergedSnapshot(editor);
-			const pageData = buildWritingFileData({
-				tlEditorSnapshot,
-				previewUri: lastPreviewRef.current.previewUri,
-				previewIsOutdated: true,
-			});
-			saveFileData(pageData);
+			await incrementalSave(editor);
 			return;
 		}
 
+		const layout = getEditorPageLayout(editor);
+		if (layout) return completePagedSave(editor, layout);
+
 		let previewUri;
+		inkChangedSinceSvgRef.current = false;
 
 		unstashStaleContent(editor);
 
@@ -763,6 +996,45 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		}
 
 		return;
+	}
+
+	// A paged writing redraws only the pages whose previews are behind, or missing, and builds the
+	// whole sheet's preview from them. See getWritingPageSvg and assembleSheetSvg.
+	const completePagedSave = async (editor: Editor, layout: PageLayout): Promise<void> => {
+		const previews: (string | undefined)[] = (lastPreviewRef.current.pagePreviewUris ?? []).slice(0, layout.pageCount);
+		const toDraw = new Set<number>();
+		for (let page = 0; page < layout.pageCount; page++) {
+			if (allPagesOutdatedRef.current || outdatedPagesRef.current.has(page) || !previews[page]) toDraw.add(page);
+		}
+		// Cleared before drawing, so edits made while it runs mark their pages again.
+		outdatedPagesRef.current.clear();
+		allPagesOutdatedRef.current = false;
+		inkChangedSinceSvgRef.current = false;
+
+		// A page's strokes have to be on the canvas to be drawn. Usually it's only the page in view;
+		// drawing others (after a split) briefly puts every page back.
+		const displayed = getDisplayedPage(editor);
+		const drawsOtherPages = [...toDraw].some((page) => page !== displayed);
+		if (toDraw.size > 0) {
+			if (drawsOtherPages) unstashStaleContent(editor);
+			else unstashDisplayedPage(editor);
+			try {
+				for (const page of [...toDraw].sort((a, b) => a - b)) {
+					previews[page] = await getWritingPageSvg(editor, layout, page);
+				}
+			} finally {
+				stashStaleContent(editor);
+			}
+		}
+
+		const pagePreviewUris = previews.map((svg) => svg ?? '');
+		const previewUri = assembleSheetSvg(layout, previews);
+		lastPreviewRef.current = { previewUri, pagePreviewUris };
+		saveFileData(buildWritingFileData({
+			tlEditorSnapshot: buildMergedSnapshot(editor),
+			previewUri,
+			pagePreviewUris,
+		}));
 	}
 
 	const getTlEditor = (): Editor | undefined => {
@@ -833,6 +1105,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			ref = {editorWrapperRefEl}
 			className = {classNames([
 				"inkc_writing-editor",
+				pages && "inkc_paged",
 			])}
 			style={{
 				height: '100%',
@@ -884,7 +1157,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 					getTlEditor = {getTlEditor}
 					onStoreChange = {(tlEditor: Editor) => queueOrRunStorePostProcesses(tlEditor)}
 				/>
-				{props.plugin.settings.writingManualLineAdd && (
+				{!pages && props.plugin.settings.writingManualLineAdd && (
 					<>
 						<button
 							className="ink_add-lines-button"
@@ -905,6 +1178,17 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 							</svg>
 						</button>
 					</>
+				)}
+				{!pages && props.pinnedPage === undefined && (
+					<AddPageButton onAddPage = {() => tlEditorRef.current && addPage(tlEditorRef.current)} />
+				)}
+				{pages && props.pinnedPage === undefined && (
+					<PageControls
+						page = {pages.page}
+						pageCount = {pages.layout.pageCount}
+						onTurn = {(page) => tlEditorRef.current && goToPage(tlEditorRef.current, page)}
+						onAddPage = {() => tlEditorRef.current && addPage(tlEditorRef.current)}
+					/>
 				)}
 				{!props.embedded && (
 					<button
@@ -932,7 +1216,18 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.writingFile)
         lastPreviewRef.current = getInkPreview(inkFileData);
-        transcriptRef.current = { transcript: inkFileData.meta?.transcript, transcriptOf: inkFileData.meta?.transcriptOf };
+        transcriptRef.current = {
+            transcript: inkFileData.meta?.transcript,
+            transcriptOf: inkFileData.meta?.transcriptOf,
+            pageTranscripts: inkFileData.meta?.pageTranscripts,
+            pageTranscriptsOf: inkFileData.meta?.pageTranscriptsOf,
+        };
+        // A session that ended before its previews were drawn (e-ink skips them until the editor
+        // closes) leaves them outdated; the next full save catches up. Without a list of pages,
+        // from before it was kept, every page is redrawn.
+        inkChangedSinceSvgRef.current = !!inkFileData.meta?.previewIsOutdated;
+        outdatedPagesRef.current = new Set(inkFileData.meta?.outdatedPages ?? []);
+        allPagesOutdatedRef.current = !!inkFileData.meta?.previewIsOutdated && !inkFileData.meta?.outdatedPages;
         if(inkFileData.tldraw) {
             const snapshot = prepareWritingSnapshot(inkFileData.tldraw as TLEditorSnapshot);
             setTlEditorSnapshot(snapshot);

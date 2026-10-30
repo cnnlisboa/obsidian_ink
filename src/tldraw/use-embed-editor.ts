@@ -27,6 +27,8 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 	showPreview: () => void,
 	/** Called once the editor has saved and closed. Not called if saving failed. */
 	onClosed?: () => void,
+	/** The ink file the embed shows, so others can tell it's being edited. */
+	filePath?: string,
 }) {
 	// Everything below is reached through refs, because the close handle registered with
 	// claimOpenEmbed is called long after the render that created it.
@@ -43,7 +45,7 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 		const containerEl = propsRef.current.containerElRef.current;
 		if (!containerEl) return;
 		if (handleRef.current?.containerEl !== containerEl) {
-			handleRef.current = { containerEl, close };
+			handleRef.current = { containerEl, close, filePath: propsRef.current.filePath };
 		}
 		return handleRef.current;
 	}
@@ -128,5 +130,8 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 	/** True from the moment the editor is asked to open until it has saved and closed. */
 	const isOpen = () => isOpenRef.current;
 
-	return { open, close, isOpen, registerEditorControls };
+	/** The open editor's controls, once it has mounted and until it starts closing. */
+	const getControls = (): C | undefined => closingRef.current ? undefined : controlsRef.current;
+
+	return { open, close, isOpen, getControls, registerEditorControls };
 }

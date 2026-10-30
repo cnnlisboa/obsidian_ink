@@ -19,6 +19,7 @@ export const DRAW_FILE_EXT = 'inkcdrawing';
 export const INK_FILE_EXTS = [WRITE_FILE_EXT, DRAW_FILE_EXT];
 export const WRITE_EMBED_KEY = 'handwritten-inkc';
 export const DRAW_EMBED_KEY = 'handdrawn-inkc';
+export const WRITING_VIEW_TYPE = 'inkc_writing-view';
 
 // Legacy names shared with upstream Ink. Only for the migration script and for
 // recognising pre-migration content — never register these.

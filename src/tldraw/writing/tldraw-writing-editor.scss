@@ -64,6 +64,19 @@
     }
 }
 
+// A paged writing shows its page as a sheet on a desk, so the page's edges are plain wherever
+// the view is larger than the page. See WritingLinesUtil.component.
+.inkc_writing-editor.inkc_paged {
+    background-color: var(--color-base-20);
+
+    rect.inkc_page-sheet {
+        fill: var(--color-base-05);
+        stroke: var(--color-base-30);
+        stroke-width: 1px;
+        vector-effect: non-scaling-stroke;
+    }
+}
+
 
 // Exit focus mode button
 .ink_exit-focus-mode-button {

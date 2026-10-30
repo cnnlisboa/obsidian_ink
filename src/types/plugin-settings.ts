@@ -53,6 +53,8 @@ export interface PluginSettings {
 	fullscreenFocusMode: boolean,
 	closeNoteOnFullscreen: boolean,
 	writingManualLineAdd: boolean,
+	// Split a one-sheet writing longer than a page into pages when it's opened. See writing-pages.ts.
+	writingAutoSplitPages: boolean,
 	writingManualLineAddCount: number,
 	writingLinesWhenLocked: boolean,
 	writingBackgroundWhenLocked: boolean,
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	fullscreenFocusMode: false,
 	closeNoteOnFullscreen: false,
 	writingManualLineAdd: false,
+	writingAutoSplitPages: false,
 	writingManualLineAddCount: 5,
 	writingLinesWhenLocked: true,
 	writingBackgroundWhenLocked: true,

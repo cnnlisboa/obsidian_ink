@@ -2,7 +2,7 @@ import { SerializedStore, TLRecord, TLUiOverrides, Editor } from "@tldraw/tldraw
 import { Menu, TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 import * as React from "react";
 import { Root, createRoot } from "react-dom/client";
-import { WRITE_FILE_EXT } from "src/constants";
+import { WRITE_FILE_EXT, WRITING_VIEW_TYPE } from "src/constants";
 import InkPlugin from "src/main";
 import { TldrawWritingEditor } from "src/tldraw/writing/tldraw-writing-editor";
 import { convertWriteFileToDraw } from "src/utils/convertWriteFileToDraw";
@@ -12,7 +12,7 @@ import { InkFileData, stringifyPageData } from "src/utils/page-file";
 ////////
 ////////
 
-export const WRITING_VIEW_TYPE = "inkc_writing-view";
+export { WRITING_VIEW_TYPE };
 
 ////////
 
@@ -34,7 +34,11 @@ export class WritingView extends TextFileView {
     focusModeWanted: boolean = true;
     tldrawControls: {
         resize?: Function,
+        goToPage?: (page: number) => void,
     } = {}
+    // A page asked for by whatever opened this view (an embed of one page), held until the editor
+    // has mounted to take it.
+    pendingPage: number | undefined;
 
     constructor(leaf: WorkspaceLeaf, plugin: InkPlugin) {
         super(leaf);
@@ -73,6 +77,12 @@ export class WritingView extends TextFileView {
                 save = {this.saveFile}
                 saveControlsReference = {(controls: any) => {
                     this.tldrawControls.resize = controls.resize;
+                    this.tldrawControls.goToPage = controls.goToPage;
+                }}
+                getOpenIntent = {() => {
+                    const page = this.pendingPage;
+                    this.pendingPage = undefined;
+                    return page !== undefined ? { page } : undefined;
                 }}
                 focusMode = {this.plugin.settings.fullscreenFocusMode ? { initiallyOn: this.focusModeActive, onToggle: this.setFocusMode } : undefined}
 			/>
@@ -89,10 +99,21 @@ export class WritingView extends TextFileView {
         return stringifyPageData(this.pageData);
     }
 
+    // Obsidian passes on the ephemeral state a file was opened with. Usually arrives after
+    // setViewData, but before the editor (which loads asynchronously) has mounted.
+    setEphemeralState(state: any): void {
+        super.setEphemeralState(state);
+        const page = state?.inkcPage;
+        if (typeof page !== 'number') return;
+        if (this.tldrawControls.goToPage) this.tldrawControls.goToPage(page);
+        else this.pendingPage = page;
+    }
+
     // This is sometimes called by Obsidian, and also called manually on file changes
     clear = (): void => {
         // NOTE: Unmounting forces the store listeners in the React app to stop (Without that, old files can save data over new files)
         this.root?.unmount();
+        this.tldrawControls = {};
         this.disableFocusMode();
     }
 

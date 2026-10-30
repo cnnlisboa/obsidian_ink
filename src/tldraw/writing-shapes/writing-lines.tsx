@@ -2,6 +2,7 @@ import { Rectangle2d, SVGContainer, SvgExportContext, TLBaseShape, TLOnResizeHan
 import { ShapeUtil } from '@tldraw/tldraw';
 import * as React from 'react';
 import { WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from 'src/constants';
+import { PageBand, getDisplayedPage, getExportBand, getPageBand, getPageLayout } from 'src/logic/writing-pages';
 
 //////////
 //////////
@@ -18,7 +19,20 @@ export const WRITING_PAPERS: { value: WritingPaper, label: string }[] = [
 
 // `lineHeight` and `paper` are optional: files written before they existed simply don't carry
 // them, and fall back to the WRITING_LINE_HEIGHT ruling they were made with.
-export type WritingLines = TLBaseShape<'writing-lines', { x: number, y: number, w: number, h: number, lineHeight?: number, paper?: WritingPaper }>
+//
+// `pageHeight` and `pageCount` are set once a writing is split into pages, and `lastPage` is the
+// page it was last open on. See src/logic/writing-pages.ts.
+export type WritingLines = TLBaseShape<'writing-lines', {
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	lineHeight?: number,
+	paper?: WritingPaper,
+	pageHeight?: number,
+	pageCount?: number,
+	lastPage?: number,
+}>
 
 export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 	static override type = 'writing-lines' as const
@@ -74,13 +88,33 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 	}
 
 	component(shape: WritingLines) {
+		// A paged writing shows one page at a time: a sheet with that page's ruling, and nothing
+		// of the pages around it, which are off the canvas.
+		const layout = getPageLayout(shape.props);
+		const page = layout ? getDisplayedPage(this.editor) : undefined;
+		if (layout && page !== undefined) {
+			const band = getPageBand(layout, page);
+			return <SVGContainer>
+				<rect
+					className = "inkc_page-sheet"
+					x = {0}
+					y = {band.top}
+					width = {shape.props.w}
+					height = {band.bottom - band.top}
+					rx = {40}
+					ry = {40}
+				/>
+				{this.createSvg(shape, band)}
+			</SVGContainer>
+		}
+
 		return <SVGContainer>
 			{this.createSvg(shape)}
 		</SVGContainer>
 	}
 
 	toSvg(shape: WritingLines, ctx: SvgExportContext): React.JSX.Element {
-		return this.createSvg(shape);
+		return this.createSvg(shape, getExportBand());
 	}
 
 	// Custom functions
@@ -88,24 +122,32 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 
 	// Everything is drawn with <line> elements, so the stylesheets that colour and hide ruled lines —
 	// in the editor, in previews, and the "show when not editing" settings — cover every paper.
-	createSvg(shape: WritingLines): React.JSX.Element {
+	//
+	// `band` limits it to one page. A page has no rule on its bottom edge, so its last line has room
+	// below for descenders without them running into the next page.
+	createSvg(shape: WritingLines, band?: PageBand): React.JSX.Element {
 		const lineHeight = shape.props.lineHeight || WRITING_LINE_HEIGHT;
-		const { w, h } = shape.props;
+		const { w } = shape.props;
+		const top = band?.top ?? 0;
+		const h = band ? band.bottom - band.top : shape.props.h;
 		const paper = shape.props.paper ?? 'lines';
 		this.isAspectRatioLocked(shape);
+
+		// How many rows of `step` fit: all the way down a sheet, or short of a page's bottom edge.
+		const countRows = (step: number) => band ? Math.round(h / step) - 1 : Math.floor(h / step);
 
 		if (paper === 'blank') return <></>;
 
 		if (paper === 'lines') {
-			const numberOfLines = Math.floor(h / lineHeight);
+			const numberOfLines = countRows(lineHeight);
 			return <>
 				{Array.from({ length: numberOfLines }, (_, index) => (
 					<line
 						key = {index}
 						x1 = {0}
-						y1 = {(index+1) * lineHeight}
+						y1 = {top + (index+1) * lineHeight}
 						x2 = {w}
-						y2 = {(index+1) * lineHeight}
+						y2 = {top + (index+1) * lineHeight}
 						// NOTE: Styling is done through CSS
 					/>
 				))}
@@ -114,7 +156,7 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 
 		// Dots and squares sit at half the ruling, so handwriting sized for the lines still fits.
 		const spacing = lineHeight / 2;
-		const rows = Math.floor(h / spacing);
+		const rows = countRows(spacing);
 
 		if (paper === 'dots') {
 			// One dashed line per row, with dashes of zero length and round caps, draws the row's
@@ -126,9 +168,9 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 						key = {index}
 						className = "inkc_paper-dots"
 						x1 = {spacing}
-						y1 = {(index+1) * spacing}
+						y1 = {top + (index+1) * spacing}
 						x2 = {w}
-						y2 = {(index+1) * spacing}
+						y2 = {top + (index+1) * spacing}
 						strokeDasharray = {`0 ${spacing}`}
 						strokeLinecap = "round"
 					/>
@@ -143,9 +185,9 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 					key = {`row-${index}`}
 					className = "inkc_paper-grid"
 					x1 = {0}
-					y1 = {(index+1) * spacing}
+					y1 = {top + (index+1) * spacing}
 					x2 = {w}
-					y2 = {(index+1) * spacing}
+					y2 = {top + (index+1) * spacing}
 				/>
 			))}
 			{Array.from({ length: columns }, (_, index) => (
@@ -153,9 +195,9 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 					key = {`column-${index}`}
 					className = "inkc_paper-grid"
 					x1 = {(index+1) * spacing}
-					y1 = {0}
+					y1 = {top}
 					x2 = {(index+1) * spacing}
-					y2 = {h}
+					y2 = {top + h}
 				/>
 			))}
 		</>

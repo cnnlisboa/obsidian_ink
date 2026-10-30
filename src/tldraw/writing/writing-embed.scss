@@ -165,3 +165,12 @@
     // explicitly in preventTldrawCanvasesCausingObsidianGestures, not by the browser.
     overscroll-behavior-y: contain;
 }
+
+// An embed of a page the writing doesn't have. See WritingEmbed.
+.inkc_page-missing {
+    padding: 1em 1.25em;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}

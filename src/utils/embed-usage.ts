@@ -8,6 +8,7 @@ import {
 } from "src/constants";
 import { formatEmbedJson, resolveInkFileFromEmbed } from "./embed";
 import { warn } from "./log-to-console";
+import { WritingTranscript, getSearchableTranscript, getTranscriptText } from "src/logic/transcription";
 
 /////////
 /////////
@@ -59,7 +60,7 @@ export function setWritingEmbedTranscripts(
 	plugin: InkPlugin,
 	editor: Editor,
 	notePath: string,
-	transcripts: Map<string, string>,
+	transcripts: Map<string, WritingTranscript>,
 ): number {
 	const content = editor.getValue();
 	const blockRegex = new RegExp(
@@ -70,7 +71,7 @@ export function setWritingEmbedTranscripts(
 	const edits: { from: number, to: number, text: string }[] = [];
 	let match: RegExpExecArray | null;
 	while ((match = blockRegex.exec(content)) !== null) {
-		let embedData: Record<string, unknown> & { link?: string; filepath?: string; transcript?: string };
+		let embedData: Record<string, unknown> & { link?: string; filepath?: string; transcript?: string; page?: number };
 		try {
 			embedData = JSON.parse(match[1]);
 		} catch (err) {
@@ -79,7 +80,9 @@ export function setWritingEmbedTranscripts(
 
 		const inkFile = resolveInkFileFromEmbed(plugin, embedData, notePath);
 		if (!inkFile || !transcripts.has(inkFile.path)) continue;
-		const transcript = transcripts.get(inkFile.path) ?? '';
+		// An embed of one page carries that page's text, so search finds the note showing it.
+		const page = typeof embedData.page === 'number' ? Math.max(0, Math.round(embedData.page) - 1) : undefined;
+		const transcript = getSearchableTranscript(getTranscriptText(transcripts.get(inkFile.path), page) ?? '');
 		if ((embedData.transcript ?? '') === transcript) continue;
 
 		if (transcript) {

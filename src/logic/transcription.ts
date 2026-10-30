@@ -4,6 +4,7 @@ import InkPlugin from "src/main";
 import { WRITING_LINE_HEIGHT, WRITING_PAGE_WIDTH } from "src/constants";
 import { InkFileData, stringifyPageData } from "src/utils/page-file";
 import { InkRecognitionFailureReason, InkRecognitionReply, RecognitionInkLine, RecognizeInkMessage } from "src/types/bridge-protocol";
+import { PageLayout, getSnapshotPageLayout, getStrokePage } from "./writing-pages";
 
 /////////
 /////////
@@ -43,8 +44,11 @@ export function canTranscribe(plugin: InkPlugin): boolean {
 
 type StrokeLayout = { points: number[], minX: number, minY: number, maxY: number, centerY: number };
 
-/** The pen strokes in a writing file, gathered into lines and put in reading order. */
-export function getInkLines(snapshot: TLEditorSnapshot): RecognitionInkLine[] {
+/**
+ * The pen strokes in a writing file, gathered into lines and put in reading order. Only those on
+ * `page`, if one is given and the writing is paged.
+ */
+export function getInkLines(snapshot: TLEditorSnapshot, page?: { layout: PageLayout, page: number }): RecognitionInkLine[] {
 	const store = (snapshot?.document?.store ?? {}) as Record<string, any>;
 	const records = Object.values(store);
 	const ruling: number = store['shape:writing-lines']?.props?.lineHeight || WRITING_LINE_HEIGHT;
@@ -53,6 +57,7 @@ export function getInkLines(snapshot: TLEditorSnapshot): RecognitionInkLine[] {
 	for (const record of records) {
 		// Highlighter marks go over text; they aren't text themselves.
 		if (record?.typeName !== 'shape' || record.type !== 'draw') continue;
+		if (page && getStrokePage(page.layout, record) !== page.page) continue;
 		const stroke = layOutStroke(record);
 		if (stroke) strokes.push(stroke);
 	}
@@ -212,14 +217,33 @@ export function getSearchableTranscript(transcript: string): string {
 	return transcript.replace(/\s*\n\s*/g, ' ').trim();
 }
 
-/** A writing file's transcript, with its line breaks. Undefined if it has never been transcribed. */
-export async function readTranscript(plugin: InkPlugin, file: TFile): Promise<string | undefined> {
+/**
+ * A writing file's transcript, with its line breaks, or one page's. Undefined if it has never
+ * been transcribed.
+ */
+export async function readTranscript(plugin: InkPlugin, file: TFile, page?: number): Promise<string | undefined> {
 	try {
 		const pageData: InkFileData = JSON.parse(await plugin.app.vault.read(file));
-		return pageData.meta?.transcript;
+		return getTranscriptText(pageData.meta, page);
 	} catch {
 		return undefined;
 	}
+}
+
+/** The handwriting read from a writing, whole and, if it's paged, page by page. */
+export type WritingTranscript = {
+	text: string,
+	pages?: string[],
+};
+
+/**
+ * The text for an embed: one page's, for an embed of a page of a paged writing, otherwise the
+ * whole writing's.
+ */
+export function getTranscriptText(transcript: { transcript?: string, text?: string, pageTranscripts?: string[], pages?: string[] } | undefined, page?: number): string | undefined {
+	const pages = transcript?.pages ?? transcript?.pageTranscripts;
+	if (page !== undefined && pages) return pages[page] ?? '';
+	return transcript?.text ?? transcript?.transcript;
 }
 
 /** Line texts as one transcript: trimmed, with empty lines dropped. */
@@ -232,7 +256,7 @@ function joinLines(texts: string[]): string {
 
 // One transcription per file at a time. A second request for the same file waits for the first,
 // then finds the ink already read and returns straight away.
-const inFlight = new Map<string, Promise<string>>();
+const inFlight = new Map<string, Promise<WritingTranscript>>();
 
 /**
  * The transcript of a writing file, read afresh only if its ink has changed since the last time
@@ -242,10 +266,10 @@ export function transcribeWritingFile(
 	plugin: InkPlugin,
 	file: TFile,
 	options: { force?: boolean, onDownloadingModel?: () => void } = {},
-): Promise<string> {
-	const previous = inFlight.get(file.path) ?? Promise.resolve('');
+): Promise<WritingTranscript> {
+	const previous = inFlight.get(file.path) ?? Promise.resolve(undefined);
 	const next = previous
-		.catch(() => '')
+		.catch(() => undefined)
 		.then(() => transcribe(plugin, file, options));
 	inFlight.set(file.path, next);
 	next.finally(() => {
@@ -254,17 +278,48 @@ export function transcribeWritingFile(
 	return next;
 }
 
-async function transcribe(plugin: InkPlugin, file: TFile, options: { force?: boolean, onDownloadingModel?: () => void }): Promise<string> {
+async function transcribe(plugin: InkPlugin, file: TFile, options: { force?: boolean, onDownloadingModel?: () => void }): Promise<WritingTranscript> {
 	const { vault } = plugin.app;
 	const pageData: InkFileData = JSON.parse(await vault.read(file));
 	const lines = getInkLines(pageData.tldraw);
 	const fingerprint = getInkFingerprint(lines);
+	const layout = getSnapshotPageLayout(pageData.tldraw);
+	const meta = pageData.meta;
 
-	if (!options.force && pageData.meta?.transcriptOf === fingerprint && pageData.meta.transcript !== undefined) {
-		return pageData.meta.transcript;
+	const upToDate = meta?.transcriptOf === fingerprint && meta.transcript !== undefined
+		&& (!layout || meta.pageTranscripts?.length === layout.pageCount);
+	if (!options.force && upToDate) {
+		return { text: meta.transcript ?? '', pages: layout ? meta.pageTranscripts : undefined };
 	}
 
-	const transcript = lines.length ? joinLines(await recognizeHandwriting(plugin, lines, options.onDownloadingModel)) : '';
+	let transcript: string;
+	let pageTranscripts: string[] | undefined;
+	let pageTranscriptsOf: string[] | undefined;
+	if (layout) {
+		// A page at a time, reading only the pages whose ink has changed, all in one request.
+		const pageLines = Array.from({ length: layout.pageCount }, (_, page) => getInkLines(pageData.tldraw, { layout, page }));
+		pageTranscriptsOf = pageLines.map(getInkFingerprint);
+		pageTranscripts = [];
+		const toRead: number[] = [];
+		for (let page = 0; page < layout.pageCount; page++) {
+			const known = meta?.pageTranscripts?.[page];
+			if (!pageLines[page].length) pageTranscripts[page] = '';
+			else if (!options.force && known !== undefined && meta?.pageTranscriptsOf?.[page] === pageTranscriptsOf[page]) pageTranscripts[page] = known;
+			else toRead.push(page);
+		}
+		if (toRead.length) {
+			const texts = await recognizeHandwriting(plugin, toRead.flatMap(page => pageLines[page]), options.onDownloadingModel);
+			let next = 0;
+			for (const page of toRead) {
+				pageTranscripts[page] = joinLines(texts.slice(next, next + pageLines[page].length));
+				next += pageLines[page].length;
+			}
+		}
+		// Pages apart by a blank line, as they are on paper.
+		transcript = pageTranscripts.filter(Boolean).join('\n\n');
+	} else {
+		transcript = lines.length ? joinLines(await recognizeHandwriting(plugin, lines, options.onDownloadingModel)) : '';
+	}
 
 	// Written into the file only if its ink is still what was read: it may have been edited while
 	// the companion app was working, and that edit's transcript is the next one's job.
@@ -277,10 +332,14 @@ async function transcribe(plugin: InkPlugin, file: TFile, options: { force?: boo
 		}
 		if (getInkFingerprint(getInkLines(latest.tldraw)) !== fingerprint) return data;
 		latest.meta = { ...latest.meta, transcript, transcriptOf: fingerprint };
+		if (pageTranscripts && pageTranscriptsOf && getSnapshotPageLayout(latest.tldraw)?.pageCount === pageTranscripts.length) {
+			latest.meta.pageTranscripts = pageTranscripts;
+			latest.meta.pageTranscriptsOf = pageTranscriptsOf;
+		}
 		return stringifyPageData(latest);
 	});
 
-	return transcript;
+	return { text: transcript, pages: pageTranscripts };
 }
 
 /** A failure as a sentence for a notice. */
