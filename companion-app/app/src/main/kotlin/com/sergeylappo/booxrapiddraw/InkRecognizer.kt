@@ -1,5 +1,8 @@
 package com.sergeylappo.booxrapiddraw
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.common.MlKitException
@@ -46,7 +49,7 @@ class InkRecognitionException(val reason: String, message: String) : Exception(m
  * Lines are recognised one at a time, since the recogniser expects a single line of text, with
  * the end of the line before as context for the next.
  */
-class InkRecognizer {
+class InkRecognizer(private val context: Context) {
     // One worker, so a second request waits for the first rather than racing it for the same
     // model download.
     private val executor = Executors.newSingleThreadExecutor()
@@ -127,6 +130,11 @@ class InkRecognizer {
         val model = DigitalInkRecognitionModel.builder(identifier).build()
         val manager = RemoteModelManager.getInstance()
         if (!Tasks.await(manager.isModelDownloaded(model))) {
+            // ML Kit's download waits for a connection rather than failing without one, which would
+            // leave the plugin waiting out the whole timeout for an answer that's known now.
+            if (!isOnline()) {
+                throw InkRecognitionException("modelUnavailable", "The handwriting model for '$language' hasn't been downloaded yet and the device is offline")
+            }
             onDownloadingModel()
             try {
                 Tasks.await(manager.download(model, DownloadConditions.Builder().build()), DOWNLOAD_TIMEOUT_S, TimeUnit.SECONDS)
@@ -139,5 +147,11 @@ class InkRecognizer {
 
         return DigitalInkRecognition.getClient(DigitalInkRecognizerOptions.builder(model).build())
             .also { recognizers[language] = it }
+    }
+
+    private fun isOnline(): Boolean {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return true
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }

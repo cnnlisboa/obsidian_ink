@@ -52,7 +52,7 @@ class OverlayShowingService : Service(), BridgeServerListener {
     private var writingMode: WritingModeState? = null
 
     // Answers the plugin's transcription requests. Independent of the pen and the overlay.
-    private val inkRecognizer = InkRecognizer()
+    private val inkRecognizer by lazy { InkRecognizer(applicationContext) }
 
     override fun onBind(intent: Intent) = null
 

@@ -7,6 +7,8 @@
     <!-- For the Obsidian-plugin companion bridge — a loopback WebSocket server. See
          /COMPANION_APP_RESEARCH.md in the parent repo. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To tell a missing handwriting model apart from one that can't be downloaded right now. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name="com.sergeylappo.booxrapiddraw.BooxRapidDraw"

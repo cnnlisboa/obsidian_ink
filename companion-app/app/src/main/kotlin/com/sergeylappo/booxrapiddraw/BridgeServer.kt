@@ -70,6 +70,13 @@ interface BridgeServerListener {
 class BridgeServer(port: Int, private val listener: BridgeServerListener) :
     WebSocketServer(InetSocketAddress("127.0.0.1", port)) {
 
+    init {
+        // A restarted service (an app update, a crash, the Stop button then starting it again)
+        // otherwise can't bind until the OS lets go of the last instance's connections, and runs on
+        // with a dead bridge in the meantime.
+        isReuseAddr = true
+    }
+
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         Log.i(TAG, "Plugin connected: ${conn.remoteSocketAddress}")
     }
