@@ -17,12 +17,6 @@
         }
         &:disabled {
             cursor: default;
-            color: var(--text-on-accent);
-            fill: var(--text-on-accent);
-            background-color: var(--interactive-accent);
-            &:hover {
-                box-shadow: var(--input-shadow);
-            }
         }
     }
 

@@ -2,9 +2,11 @@ import "./modify-menu.scss";
 import * as React from "react";
 import { UndoIcon } from "src/graphics/icons/undo-icon";
 import { RedoIcon } from "src/graphics/icons/redo-icon";
-import { Editor } from "@tldraw/tldraw";
+import { Editor, useValue } from "@tldraw/tldraw";
 import { silentlyChangeStore } from "src/utils/tldraw-helpers";
 import classNames from "classnames";
+import { useResolvedEditor } from "../use-resolved-editor";
+import { ToolButton } from "../tool-button/tool-button";
 
 //////////
 //////////
@@ -16,33 +18,11 @@ interface ModifyMenuProps {
 
 export const ModifyMenu = React.forwardRef<HTMLDivElement, ModifyMenuProps>((props, ref) => {
 
-	const [canUndo, setCanUndo] = React.useState<boolean>(false);
-	const [canRedo, setCanRedo] = React.useState<boolean>(false);
-
-    React.useEffect( () => {
-        
-        let removeUserActionListener: () => void;
-        
-        const mountDelayMs = 100;
-        setTimeout( () => {
-            const tlEditor = props.getTlEditor();
-            if(!tlEditor) return;
-
-            let timeout: NodeJS.Timeout;
-            removeUserActionListener = tlEditor.store.listen((entry) => {
-                clearTimeout(timeout);
-                timeout = setTimeout( () => { // TODO: Create a debounce helper
-                    setCanUndo( tlEditor.getCanUndo() );
-                    setCanRedo( tlEditor.getCanRedo() );
-                }, 100);
-            }, {
-                source: 'all',
-                scope: 'all'	// Filters some things like camera movement changes. But Not sure it's locked down enough, so leaving as all.
-            })
-        }, mountDelayMs);
-
-        return () => removeUserActionListener();
-    }, []);
+    const editor = useResolvedEditor(props.getTlEditor);
+    // Both are reactive in tldraw, so these re-render exactly when undo/redo availability flips —
+    // not on every store change, which during a stroke is every pen sample.
+    const canUndo = useValue('can undo', () => editor?.getCanUndo() ?? false, [editor]);
+    const canRedo = useValue('can redo', () => editor?.getCanRedo() ?? false, [editor]);
 
     ///////////
 
@@ -78,18 +58,20 @@ export const ModifyMenu = React.forwardRef<HTMLDivElement, ModifyMenuProps>((pro
             <div
                 className='ink_modify-menu'
             >
-                <button
-                    onPointerDown={undo}
-                    disabled={!canUndo}
+                <ToolButton
+                    label = "Undo"
+                    onPress = {undo}
+                    disabled = {!canUndo}
                 >
                     <UndoIcon/>
-                </button>
-                <button
-                    onPointerDown={redo}
-                    disabled={!canRedo}
+                </ToolButton>
+                <ToolButton
+                    label = "Redo"
+                    onPress = {redo}
+                    disabled = {!canRedo}
                 >
                     <RedoIcon/>
-                </button>
+                </ToolButton>
             </div>
         </div>
     </>;

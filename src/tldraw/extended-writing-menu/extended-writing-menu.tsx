@@ -1,9 +1,9 @@
 import { LockIcon } from "src/graphics/icons/lock-icon";
 import "./extended-writing-menu.scss";
 import * as React from "react";
-import { OverflowIcon } from "src/graphics/icons/overflow-icon";
 import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
 import OverflowMenu from "../overflow-menu/overflow-menu";
+import { ToolButton } from "../tool-button/tool-button";
 
 //////////
 //////////
@@ -21,18 +21,19 @@ export const ExtendedWritingMenu: React.FC<{
 		<div
             className = 'ink_extended-writing-menu'
         >
-            <button
-                onPointerDown = {() => props.onLockClick()}
+            <ToolButton
+                label = "Done editing"
+                onPress = {() => props.onLockClick()}
             >
                 <LockIcon/>
-            </button>
+            </ToolButton>
             {props.onOpenClick && (
-                <button
-                    onPointerDown = {() => props.onOpenClick?.()}
-                    aria-label = "Open full screen"
+                <ToolButton
+                    label = "Open full screen"
+                    onPress = {() => props.onOpenClick?.()}
                 >
                     <FullscreenIcon/>
-                </button>
+                </ToolButton>
             )}
             <OverflowMenu
                 menuOptions = {props.menuOptions}

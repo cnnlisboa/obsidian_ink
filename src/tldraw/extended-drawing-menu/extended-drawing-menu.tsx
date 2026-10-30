@@ -1,10 +1,10 @@
 import { LockIcon } from "src/graphics/icons/lock-icon";
 import "./extended-drawing-menu.scss";
 import * as React from "react";
-import { OverflowIcon } from "src/graphics/icons/overflow-icon";
 import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
 import { ResizeDiagonalIcon } from "src/graphics/icons/resize-diagonal-icon";
 import OverflowMenu from "../overflow-menu/overflow-menu";
+import { ToolButton } from "../tool-button/tool-button";
 
 //////////
 //////////
@@ -24,27 +24,28 @@ export const ExtendedDrawingMenu: React.FC<{
             className = 'ink_extended-writing-menu'
         >
             {props.onLockClick && (
-                <button
-                    onPointerDown = {() => props.onLockClick?.()}
+                <ToolButton
+                    label = "Done editing"
+                    onPress = {() => props.onLockClick?.()}
                 >
                     <LockIcon/>
-                </button>            
+                </ToolButton>
             )}
             {props.onOpenClick && (
-                <button
-                    onPointerDown = {() => props.onOpenClick?.()}
-                    aria-label = "Open full screen"
+                <ToolButton
+                    label = "Open full screen"
+                    onPress = {() => props.onOpenClick?.()}
                 >
                     <FullscreenIcon/>
-                </button>
+                </ToolButton>
             )}
             {props.onSaveFrameClick && (
-                <button
-                    onPointerDown = {() => props.onSaveFrameClick?.()}
-                    aria-label = "Save this framing"
+                <ToolButton
+                    label = "Save this framing"
+                    onPress = {() => props.onSaveFrameClick?.()}
                 >
                     <ResizeDiagonalIcon/>
-                </button>
+                </ToolButton>
             )}
             <OverflowMenu
                 menuOptions = {props.menuOptions}

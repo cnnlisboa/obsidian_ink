@@ -3,70 +3,31 @@ import * as React from "react";
 import { WriteIcon } from "src/graphics/icons/write-icon";
 import { EraseIcon } from "src/graphics/icons/erase-icon";
 import { SelectIcon } from "src/graphics/icons/select-icon";
-import { UndoIcon } from "src/graphics/icons/undo-icon";
-import { RedoIcon } from "src/graphics/icons/redo-icon";
-import { HandIcon } from "src/graphics/icons/hand-icon";
-import { Editor } from "@tldraw/tldraw";
-import { Activity, getActivityType, silentlyChangeStore } from "src/utils/tldraw-helpers";
+import { TouchIcon } from "src/graphics/icons/touch-icon";
+import { Editor, useValue } from "@tldraw/tldraw";
 import classNames from "classnames";
+import { useResolvedEditor } from "../use-resolved-editor";
+import { ToolButton } from "../tool-button/tool-button";
 
 //////////
 //////////
 
-export enum tool {
-	select = 'select',
-	draw = 'draw',
-	eraser = 'eraser',
-}
 interface WritingMenuProps {
     getTlEditor: () => Editor | undefined,
-    onStoreChange: (elEditor: Editor) => void,
     stylusOnly: boolean,
     onToggleStylusOnly: () => void,
 }
 
 export const WritingMenu = (props: WritingMenuProps) => {
 
-    const [curTool, setCurTool] = React.useState<tool>(tool.draw);
+    const editor = useResolvedEditor(props.getTlEditor);
+    // Read from the editor rather than remembered here, so the highlight follows the tool whatever
+    // changed it — including the pen's eraser button, which swaps tools for the length of a stroke.
+    const curToolId = useValue('current tool', () => editor?.getCurrentToolId(), [editor]);
 
-    ///////////
-
-    function undo() {
-		const tlEditor = props.getTlEditor();
-		if (!tlEditor) return;
-		silentlyChangeStore( tlEditor, () => {
-			tlEditor.undo();
-		});
-		props.onStoreChange(tlEditor)
-	}
-	function redo() {
-		const tlEditor = props.getTlEditor();
-		if (!tlEditor) return;
-		silentlyChangeStore( tlEditor, () => {
-			tlEditor.redo();
-		});
-		props.onStoreChange(tlEditor)
-
-	}
-	function activateSelectTool() {
-		const tlEditor = props.getTlEditor();
-		if (!tlEditor) return;
-		tlEditor.setCurrentTool('select');
-		setCurTool(tool.select);
-
-	}
-	function activateDrawTool() {
-		const tlEditor = props.getTlEditor();
-		if (!tlEditor) return;
-		tlEditor.setCurrentTool('draw');
-		setCurTool(tool.draw);
-	}
-	function activateEraseTool() {
-		const tlEditor = props.getTlEditor();
-		if (!tlEditor) return;
-		tlEditor.setCurrentTool('eraser');
-		setCurTool(tool.eraser);
-	}
+    function activateTool(toolId: string) {
+        props.getTlEditor()?.setCurrentTool(toolId);
+    }
 
     ///////////
     ///////////
@@ -78,50 +39,37 @@ export const WritingMenu = (props: WritingMenuProps) => {
                 'ink_menu-bar_full',
             ])}
         >
-            {/* <div
-                className='ink_quick-menu'
-            >
-                <button
-                    onPointerDown={undo}
-                    disabled={!canUndo}
-                >
-                    <UndoIcon/>
-                </button>
-                <button
-                    onPointerDown={redo}
-                    disabled={!canRedo}
-                >
-                    <RedoIcon/>
-                </button>
-            </div> */}
             <div
                 className='ink_tool-menu'
             >
-                <button
-                    onPointerDown={activateSelectTool}
-                    disabled={curTool === tool.select}
+                <ToolButton
+                    label = "Select"
+                    pressed = {curToolId === 'select'}
+                    onPress = {() => activateTool('select')}
                 >
                     <SelectIcon/>
-                </button>
-                <button
-                    onPointerDown={activateDrawTool}
-                    disabled={curTool === tool.draw}
+                </ToolButton>
+                <ToolButton
+                    label = "Pen"
+                    pressed = {curToolId === 'draw'}
+                    onPress = {() => activateTool('draw')}
                 >
                     <WriteIcon/>
-                </button>
-                <button
-                    onPointerDown={activateEraseTool}
-                    disabled={curTool === tool.eraser}
+                </ToolButton>
+                <ToolButton
+                    label = "Eraser"
+                    pressed = {curToolId === 'eraser'}
+                    onPress = {() => activateTool('eraser')}
                 >
                     <EraseIcon/>
-                </button>
-                <button
-                    onPointerDown={props.onToggleStylusOnly}
-                    disabled={!props.stylusOnly}
-                    aria-label={props.stylusOnly ? "Stylus only — tap to allow finger writing" : "Finger writing enabled — tap for stylus only"}
+                </ToolButton>
+                <ToolButton
+                    label = {props.stylusOnly ? "Finger writing off — tap to allow" : "Finger writing on — tap for stylus only"}
+                    pressed = {!props.stylusOnly}
+                    onPress = {props.onToggleStylusOnly}
                 >
-                    <HandIcon/>
-                </button>
+                    <TouchIcon/>
+                </ToolButton>
             </div>
             <div
                 className='ink_other-menu'

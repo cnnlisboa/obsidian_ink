@@ -63,6 +63,10 @@ const myOverrides: TLUiOverrides = {}
 const tlOptions: Partial<TldrawOptions> = {
 	defaultSvgPadding: 10, // Slight amount to prevent cropping overflows from stroke thickness
 }
+// Module-level so it's the same array on every render. <TldrawEditor> rebuilds its editor whenever
+// `tools` changes identity, which used to happen on every re-render here — throwing away undo
+// history and re-running onMount each time, e.g. whenever the finger-writing toggle was pressed.
+const tlTools = [...defaultTools, ...defaultShapeTools];
 
 function getDrawingShapeUtils(useEreaderRenderer: boolean) {
 	if (useEreaderRenderer) {
@@ -386,7 +390,7 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 			<TldrawEditor
 				options = {tlOptions}
 				shapeUtils = {shapeUtils}
-				tools = {[...defaultTools, ...defaultShapeTools]}
+				tools = {tlTools}
 				initialState = "draw"
 				overrides={myOverrides}
 				snapshot = {tlEditorSnapshot}
@@ -404,7 +408,6 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 			<PrimaryMenuBar>
 				<DrawingMenu
 					getTlEditor = {getTlEditor}
-					onStoreChange = {(tlEditor: Editor) => queueOrRunStorePostProcesses(tlEditor)}
 					embedded = {props.embedded}
 					stylusOnly = {stylusOnly}
 					onToggleStylusOnly = {toggleStylusOnly}

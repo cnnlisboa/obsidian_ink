@@ -1,27 +1,20 @@
 import "./drawing-menu.scss";
 import * as React from "react";
-import { UndoIcon } from "src/graphics/icons/undo-icon";
-import { RedoIcon } from "src/graphics/icons/redo-icon";
 import { SelectIcon } from "src/graphics/icons/select-icon";
 import { EraseIcon } from "src/graphics/icons/erase-icon";
-import { Editor } from "@tldraw/tldraw";
-import { silentlyChangeStore } from "src/utils/tldraw-helpers";
+import { Editor, useValue } from "@tldraw/tldraw";
 import { DrawIcon } from "src/graphics/icons/draw-icon";
 import { HandIcon } from "src/graphics/icons/hand-icon";
+import { TouchIcon } from "src/graphics/icons/touch-icon";
 import classNames from "classnames";
+import { useResolvedEditor } from "../use-resolved-editor";
+import { ToolButton } from "../tool-button/tool-button";
 
 //////////
 //////////
 
-export enum tool {
-	select = 'select',
-	draw = 'draw',
-	eraser = 'eraser',
-	hand = 'hand',
-}
 interface DrawingMenuProps {
     getTlEditor: () => Editor | undefined,
-    onStoreChange: (elEditor: Editor) => void,
     embedded?: boolean,
     stylusOnly: boolean,
     onToggleStylusOnly: () => void,
@@ -29,62 +22,22 @@ interface DrawingMenuProps {
 
 export const DrawingMenu = React.forwardRef<HTMLDivElement, DrawingMenuProps>((props, ref) => {
 
-    const [curTool, setCurTool] = React.useState<tool>(tool.draw);
+    const editor = useResolvedEditor(props.getTlEditor);
+    // Read from the editor rather than remembered here, so the highlight follows the tool whatever
+    // changed it — including the pen's eraser button, which swaps tools for the length of a stroke.
+    const curToolId = useValue('current tool', () => editor?.getCurrentToolId(), [editor]);
 
     ///////////
 
-    function undo() {
+    function activateTool(toolId: string) {
 		const editor = props.getTlEditor();
 		if (!editor) return;
-		silentlyChangeStore( editor, () => {
-			editor.undo();
-		});
-		props.onStoreChange(editor)
-	}
-	function redo() {
-		const editor = props.getTlEditor();
-		if (!editor) return;
-		silentlyChangeStore( editor, () => {
-			editor.redo();
-		});
-		props.onStoreChange(editor)
-
-	}
-	function lockCameraIfEmbedded(editor: Editor) {
+		// An embedded drawing's camera stays put so the page can scroll past it, except while the
+		// hand tool is out, which exists to pan it.
 		if (props.embedded) {
-			editor.setCameraOptions({ isLocked: true });
+			editor.setCameraOptions({ isLocked: toolId !== 'hand' });
 		}
-	}
-	function activateSelectTool() {
-		const editor = props.getTlEditor();
-		if (!editor) return;
-		lockCameraIfEmbedded(editor);
-		editor.setCurrentTool('select');
-		setCurTool(tool.select);
-	}
-	function activateDrawTool() {
-		const editor = props.getTlEditor();
-		if (!editor) return;
-		lockCameraIfEmbedded(editor);
-		editor.setCurrentTool('draw');
-		setCurTool(tool.draw);
-	}
-	function activateEraseTool() {
-		const editor = props.getTlEditor();
-		if (!editor) return;
-		lockCameraIfEmbedded(editor);
-		editor.setCurrentTool('eraser');
-		setCurTool(tool.eraser);
-	}
-	function activateHandTool() {
-		const editor = props.getTlEditor();
-		if (!editor) return;
-		// Unlock camera so hand tool can pan
-		if (props.embedded) {
-			editor.setCameraOptions({ isLocked: false });
-		}
-		editor.setCurrentTool('hand');
-		setCurTool(tool.hand);
+		editor.setCurrentTool(toolId);
 	}
 
     ///////////
@@ -98,61 +51,48 @@ export const DrawingMenu = React.forwardRef<HTMLDivElement, DrawingMenuProps>((p
                 'ink_menu-bar_full',
             ])}
         >
-            {/* <div
-                className='ink_quick-menu'
-            >
-                <button
-                    onPointerDown={undo}
-                    disabled={!canUndo}
-                >
-                    <UndoIcon/>
-                </button>
-                <button
-                    onPointerDown={redo}
-                    disabled={!canRedo}
-                >
-                    <RedoIcon/>
-                </button>
-            </div> */}
             <div
                 className='ink_tool-menu'
             >
-                <button
-                    onPointerDown={activateSelectTool}
-                    disabled={curTool === tool.select}
+                <ToolButton
+                    label = "Select"
+                    pressed = {curToolId === 'select'}
+                    onPress = {() => activateTool('select')}
                 >
                     <SelectIcon/>
-                </button>
-                <button
-                    onPointerDown={activateDrawTool}
-                    disabled={curTool === tool.draw}
+                </ToolButton>
+                <ToolButton
+                    label = "Pen"
+                    pressed = {curToolId === 'draw'}
+                    onPress = {() => activateTool('draw')}
                 >
                     <DrawIcon/>
-                </button>
-                <button
-                    onPointerDown={activateEraseTool}
-                    disabled={curTool === tool.eraser}
+                </ToolButton>
+                <ToolButton
+                    label = "Eraser"
+                    pressed = {curToolId === 'eraser'}
+                    onPress = {() => activateTool('eraser')}
                 >
                     <EraseIcon/>
-                </button>
-                <button
-                    onPointerDown={activateHandTool}
-                    disabled={curTool === tool.hand}
+                </ToolButton>
+                <ToolButton
+                    label = "Pan"
+                    pressed = {curToolId === 'hand'}
+                    onPress = {() => activateTool('hand')}
                 >
                     <HandIcon/>
-                </button>
-                <button
-                    onPointerDown={props.onToggleStylusOnly}
-                    disabled={!props.stylusOnly}
-                    aria-label={props.stylusOnly ? "Stylus only — tap to allow finger drawing" : "Finger drawing enabled — tap for stylus only"}
+                </ToolButton>
+                <ToolButton
+                    label = {props.stylusOnly ? "Finger drawing off — tap to allow" : "Finger drawing on — tap for stylus only"}
+                    pressed = {!props.stylusOnly}
+                    onPress = {props.onToggleStylusOnly}
                 >
-                    <HandIcon/>
-                </button>
+                    <TouchIcon/>
+                </ToolButton>
             </div>
             <div
                 className='ink_other-menu'
             >
-                
             </div>
         </div>
     </>;
