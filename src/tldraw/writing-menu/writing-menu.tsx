@@ -2,7 +2,8 @@ import "./writing-menu.scss";
 import * as React from "react";
 import { WriteIcon } from "src/graphics/icons/write-icon";
 import { EraseIcon } from "src/graphics/icons/erase-icon";
-import { SelectIcon } from "src/graphics/icons/select-icon";
+import { LassoIcon } from "src/graphics/icons/lasso-icon";
+import { DeleteIcon } from "src/graphics/icons/delete-icon";
 import { TouchIcon } from "src/graphics/icons/touch-icon";
 import { HighlighterIcon } from "src/graphics/icons/highlighter-icon";
 import { DefaultColorStyle, DefaultSizeStyle, Editor, TLDefaultColorStyle, TLDefaultSizeStyle, getDefaultColorTheme, useValue } from "@tldraw/tldraw";
@@ -38,6 +39,7 @@ export const WritingMenu = (props: WritingMenuProps) => {
     // changed it — including the pen's eraser button, which swaps tools for the length of a stroke.
     const curToolId = useValue('current tool', () => editor?.getCurrentToolId(), [editor]);
     const isDarkMode = useValue('dark mode', () => editor?.user.getIsDarkMode() ?? false, [editor]);
+    const hasSelection = useValue('has selection', () => (editor?.getSelectedShapeIds().length ?? 0) > 0, [editor]);
     const theme = getDefaultColorTheme({ isDarkMode });
 
     const settings = props.plugin.settings;
@@ -89,6 +91,16 @@ export const WritingMenu = (props: WritingMenuProps) => {
         }
     }
 
+    // There's no keyboard to press Delete on a tablet, so a selection brings its own button.
+    function deleteSelection() {
+        const editor = props.getTlEditor();
+        if (!editor) return;
+        const ids = editor.getSelectedShapeIds();
+        if (!ids.length) return;
+        editor.mark('deleting selection');
+        editor.deleteShapes(ids);
+    }
+
     function choosePenColor(color: TLDefaultColorStyle) {
         setPenColor(color);
         settings.writingPenColor = color;
@@ -128,11 +140,11 @@ export const WritingMenu = (props: WritingMenuProps) => {
                 className='ink_tool-menu'
             >
                 <ToolButton
-                    label = "Select"
+                    label = "Lasso select"
                     pressed = {curToolId === 'select'}
                     onPress = {() => activateTool('select')}
                 >
-                    <SelectIcon/>
+                    <LassoIcon/>
                 </ToolButton>
                 <ToolButton
                     label = {curToolId === 'draw' ? "Pen — press again for ink" : "Pen"}
@@ -157,6 +169,14 @@ export const WritingMenu = (props: WritingMenuProps) => {
                 >
                     <EraseIcon/>
                 </ToolButton>
+                {hasSelection && (
+                    <ToolButton
+                        label = "Delete selection"
+                        onPress = {deleteSelection}
+                    >
+                        <DeleteIcon/>
+                    </ToolButton>
+                )}
                 <ToolButton
                     label = {props.stylusOnly ? "Finger writing off — tap to allow" : "Finger writing on — tap for stylus only"}
                     pressed = {!props.stylusOnly}
