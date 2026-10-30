@@ -8,11 +8,31 @@
     z-index: 1000;
     padding: 8px;
 
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
+    // Tools in the middle column, centred on the embed while there's room. The side columns are
+    // what give way on a narrow embed: the empty left one shrinks first, so the tools shift left
+    // rather than running underneath whatever sits on the right.
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+    column-gap: 8px;
+    align-items: center;
 
     pointer-events: none;
+
+    // The editor menus wrap their tools in a full-width bar, which only gets in the grid's way.
+    > .ink_menu-bar_full {
+        display: contents;
+    }
+    .ink_tool-menu {
+        grid-column: 2;
+    }
+    .ink_other-menu {
+        display: none;
+    }
+    // Everything else the editor puts in the bar — its extended menu, the exit-focus button.
+    > :not(.ink_menu-bar_full) {
+        grid-column: 3;
+        justify-self: end;
+    }
 }
 
 // If inside an embed block

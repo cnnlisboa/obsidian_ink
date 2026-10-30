@@ -1,6 +1,6 @@
 import { Editor, TLPageId, createShapeId } from "@tldraw/tldraw";
 import { WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from "src/constants";
-import { getWritingContainerId, getWritingLinesId, initWritingCamera, silentlyChangeStore } from "./tldraw-helpers";
+import { getWritingContainerId, getWritingLinesId, initWritingCamera, isInkShapeType, silentlyChangeStore } from "./tldraw-helpers";
 
 ////////
 ////////
@@ -165,7 +165,7 @@ export function deleteWritingPage(editor: Editor, pageIndex: number, topMarginPx
 export function detectPageOverflow(editor: Editor, pageHeight: number): boolean {
 	const shapes = editor.getCurrentPageShapes();
 	for (const shape of shapes) {
-		if (shape.type !== 'draw') continue;
+		if (!isInkShapeType(shape.type)) continue;
 		const bounds = editor.getShapePageBounds(shape.id);
 		if (bounds && bounds.maxY > pageHeight) {
 			return true;

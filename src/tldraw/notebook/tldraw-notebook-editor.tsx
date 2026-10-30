@@ -448,6 +448,7 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 
 			<PrimaryMenuBar>
 				<WritingMenu
+					plugin = {props.plugin}
 					getTlEditor = {getTlEditor}
 					stylusOnly = {stylusOnly}
 					onToggleStylusOnly = {toggleStylusOnly}

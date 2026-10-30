@@ -1,7 +1,7 @@
 import './tldraw-writing-editor.scss';
 import { Box, DefaultDashStyle, DrawShapeUtil, Editor, HistoryEntry, StoreSnapshot, TLDrawShape, TLStoreSnapshot, TLRecord, TLShapeId, TLStore, TLUiOverrides, TLUnknownShape, Tldraw, getSnapshot, TLSerializedStore, TldrawOptions, TldrawEditor, defaultTools, defaultShapeTools, defaultShapeUtils, defaultBindingUtils, TldrawScribble, TldrawShapeIndicators, TldrawSelectionForeground, TldrawSelectionBackground, TldrawHandles, TLEditorSnapshot } from "@tldraw/tldraw";
 import { useRef } from "react";
-import { Activity, WritingCameraLimits, adaptTldrawToObsidianThemeMode, deleteObsoleteWritingTemplateShapes, fitWritingCameraToWidth, focusChildTldrawEditor, getActivityType, getWritingCameraYBounds, getWritingLineHeight, getWritingContainerBounds, getWritingContainerShape, getWritingSvg, hideWritingContainer, hideWritingLines, hideWritingTemplate, initWritingCamera, initWritingCameraLimits, lockShape, prepareWritingSnapshot, preventTldrawCanvasesCausingObsidianGestures, resizeWritingTemplateInvitingly, addWritingLines, removeWritingLine, restrictWritingCamera, silentlyChangeStore, unhideWritingContainer, unhideWritingLines, unhideWritingTemplate, unlockShape, updateWritingStoreIfNeeded, useStash } from "../../utils/tldraw-helpers";
+import { Activity, WritingCameraLimits, isInkShapeType, adaptTldrawToObsidianThemeMode, deleteObsoleteWritingTemplateShapes, fitWritingCameraToWidth, focusChildTldrawEditor, getActivityType, getWritingCameraYBounds, getWritingLineHeight, getWritingContainerBounds, getWritingContainerShape, getWritingSvg, hideWritingContainer, hideWritingLines, hideWritingTemplate, initWritingCamera, initWritingCameraLimits, lockShape, prepareWritingSnapshot, preventTldrawCanvasesCausingObsidianGestures, resizeWritingTemplateInvitingly, addWritingLines, removeWritingLine, restrictWritingCamera, silentlyChangeStore, unhideWritingContainer, unhideWritingLines, unhideWritingTemplate, unlockShape, updateWritingStoreIfNeeded, useStash } from "../../utils/tldraw-helpers";
 import { WritingContainer, WritingContainerUtil } from "../writing-shapes/writing-container"
 import { WritingMenu } from "../writing-menu/writing-menu";
 import InkPlugin from "../../main";
@@ -468,10 +468,11 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			rects.push({ left: r.left, top: r.top, width: r.width, height: r.height });
 		};
 
-		// This editor's own chrome. Both sit *over* the canvas (PrimaryMenuBar is a sibling of
-		// TldrawEditor, positioned above it), so they fall inside the rect we ask to capture.
+		// This editor's own chrome. All of it sits *over* the canvas (PrimaryMenuBar is a sibling of
+		// TldrawEditor, positioned above it), so it falls inside the rect we ask to capture. The pen
+		// palette hangs below the menu bar, outside its box, so it's listed on its own.
 		const wrapper = editorWrapperRefEl.current;
-		wrapper?.querySelectorAll('.ink_primary-menu-bar, .ink_scroll-buttons').forEach(push);
+		wrapper?.querySelectorAll('.ink_primary-menu-bar, .ink_scroll-buttons, .inkc_pen-palette').forEach(push);
 
 		// App-level popups and modals can open over any embed, including ours.
 		document.querySelectorAll('.menu, .modal-container, .suggestion-container').forEach(push);
@@ -530,7 +531,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// resizeWritingTemplateInvitingly so it only runs when content actually grew.
 	const updateContentMaxYFromEntry = (entry: HistoryEntry<TLRecord>) => {
 		const scan = (record: TLRecord) => {
-			if (record.typeName !== 'shape' || record.type !== 'draw') return;
+			if (record.typeName !== 'shape' || !isInkShapeType(record.type)) return;
 			const shape = record as TLDrawShape;
 			for (const seg of shape.props.segments) {
 				for (const p of seg.points) {
@@ -762,9 +763,11 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 			<PrimaryMenuBar>
 				<WritingMenu
+					plugin = {props.plugin}
 					getTlEditor = {getTlEditor}
 					stylusOnly = {stylusOnly}
 					onToggleStylusOnly = {toggleStylusOnly}
+					onChromeChange = {sendBridgeUpdate}
 				/>
 				{props.embedded && props.extendedMenu && (
 					<ExtendedWritingMenu

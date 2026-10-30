@@ -48,10 +48,8 @@
 
 
 .ink_tool-menu {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50% );
+    // The anchor for the pen palette, which opens below it.
+    position: relative;
 
     display: flex;
     flex-direction: row;
@@ -59,6 +57,7 @@
     gap: 8px;
 
     button {
+        position: relative;
         width: 2.5em;
         height: 2.5em;
         border-radius: 2.5em;
@@ -69,6 +68,18 @@
             height: 1.5em !important;
         }
     }
+}
+
+// The ink currently loaded in the pen or highlighter, shown on its button.
+.inkc_tool-ink-dot {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1.5px solid var(--background-primary);
+    pointer-events: none;
 }
 
 .ink_other-menu {

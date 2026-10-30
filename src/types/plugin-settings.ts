@@ -1,3 +1,4 @@
+import type { TLDefaultColorStyle, TLDefaultSizeStyle } from "@tldraw/tldraw";
 import { WRITING_LINE_HEIGHT } from "src/constants";
 ////////
 ////////
@@ -30,6 +31,11 @@ export interface PluginSettings {
 	writingSmoothing: boolean,
 	writingStreamline: number,
 	stylusOnlyInput: boolean,
+	// The pen and highlighter last picked in a writing toolbar. Shared by every writing and
+	// notebook editor, so a pen chosen in one note is still in hand in the next.
+	writingPenColor: TLDefaultColorStyle,
+	writingPenSize: TLDefaultSizeStyle,
+	writingHighlighterColor: TLDefaultColorStyle,
 	companionBridgeEnabled: boolean,
 	companionBridgePort: number,
 	fingerSwipeScroll: boolean,
@@ -77,6 +83,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingSmoothing: false,
 	writingStreamline: 0.1,
 	stylusOnlyInput: false,
+	writingPenColor: 'black',
+	writingPenSize: 'm',
+	writingHighlighterColor: 'yellow',
 	companionBridgeEnabled: false,
 	companionBridgePort: 8765,
 	fingerSwipeScroll: false,

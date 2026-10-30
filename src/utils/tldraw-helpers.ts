@@ -32,6 +32,16 @@ export function getWritingLinesShape(editor: Editor, pageIndex?: number): Writin
 	return editor.getShape(getWritingLinesId(pageIndex)) as WritingLines | undefined;
 }
 
+/**
+ * Shape types that are ink: what the pen and highlighter leave behind. Everything that watches
+ * for writing — saving, stashing, growing the page — treats them the same way.
+ */
+const INK_SHAPE_TYPES = new Set(['draw', 'highlight']);
+
+export function isInkShapeType(type: string): boolean {
+	return INK_SHAPE_TYPES.has(type);
+}
+
 export enum Activity {
 	PointerMoved,
 	CameraMovedManually,
@@ -76,7 +86,7 @@ export function getActivitySummary(entry: HistoryEntry<TLRecord>) {
 	if (addedRecords) {
 		for (let i = 0; i < addedRecords.length; i++) {
 			const record = addedRecords[i];
-			if (record.typeName == 'shape' && record.type == 'draw') {
+			if (record.typeName == 'shape' && isInkShapeType(record.type)) {
 				summary.drawShapesStarted += 1;
 				if ('isComplete' in record.props && record.props.isComplete === true) {
 					summary.drawShapesCompleted += 1;
@@ -89,7 +99,7 @@ export function getActivitySummary(entry: HistoryEntry<TLRecord>) {
 	if (updatedRecords) {
 		for (let i = 0; i < updatedRecords.length; i++) {
 			const recordFinalState = updatedRecords[i][1];
-			if (recordFinalState.typeName == 'shape' && recordFinalState.type == 'draw') {
+			if (recordFinalState.typeName == 'shape' && isInkShapeType(recordFinalState.type)) {
 				if ('isComplete' in recordFinalState.props && recordFinalState.props.isComplete === true) {
 					summary.drawShapesCompleted += 1;
 				} else {
@@ -109,7 +119,7 @@ export function getActivitySummary(entry: HistoryEntry<TLRecord>) {
 	if (removedRecords) {
 		for (let i = 0; i < removedRecords.length; i++) {
 			const record = removedRecords[i];
-			if (record.typeName == 'shape' && record.type == 'draw') {
+			if (record.typeName == 'shape' && isInkShapeType(record.type)) {
 				summary.drawShapesRemoved += 1;
 			}
 		}
@@ -541,7 +551,9 @@ export const useStash = (plugin: InkPlugin) => {
 		// TODO: Order shapes by vertical position
 		for (let i = 0; i <= completeShapes.length - effectiveLimit; i++) {
 			const record = completeShapes[i];
-			if (record.type !== 'draw') return;
+			// Only ink is stashed. Skipped rather than returned on: anything else here used to
+			// abandon stashing altogether.
+			if (!isInkShapeType(record.type)) continue;
 
 			staleShapeIds.push(record.id as TLShapeId);
 			staleShapes.push(record as TLShape);
