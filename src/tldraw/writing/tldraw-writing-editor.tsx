@@ -47,6 +47,9 @@ interface TldrawWritingEditorProps {
 	maxHeight?: number,
 	// Renders the writing smaller inside the embed. See WritingEmbedData.scale.
 	scale?: number,
+	// How far a capped embed's preview was scrolled, in px, so the editor opens on the same part
+	// of the page.
+	getPreviewScrollPx?: () => number,
 
 	// For embeds
 	embedded?: boolean,
@@ -97,7 +100,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	const longDelayPostProcessTimeoutRef = useRef<NodeJS.Timeout>();
 	const tlEditorRef = useRef<Editor>();
 	const editorWrapperRefEl = useRef<HTMLDivElement>(null);
-	const { stashStaleContent, unstashStaleContent, getStashedShapes } = useStash(props.plugin);
+	const { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, getStashedShapes } = useStash(props.plugin);
 	const cameraLimitsRef = useRef<WritingCameraLimits>();
 	// The last preview generated for this file, carried forward by saves that don't regenerate it.
 	// See InkPreview.
@@ -184,10 +187,6 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 		updateWritingStoreIfNeeded(editor);
 
-		// Prime the stash once after load so the live store starts under the limit on
-		// large files. With Fix 5 the stash no longer runs on DrawingStarted.
-		stashStaleContent(editor);
-
 		// tldraw content setup
 		adaptTldrawToObsidianThemeMode(editor);
 		resizeWritingTemplateInvitingly(editor);
@@ -207,7 +206,12 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		} else {
 			initWritingCamera(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX, props.scale);
 			cameraLimitsRef.current = initWritingCameraLimits(editor);
+			if(cappedEmbedCamera) scrollToPreviewPosition(editor);
 		}
+
+		// Prime the stash once after load so the live store starts under the limit on large files.
+		// After the camera is placed, since what's stashed depends on what's on screen.
+		stashStaleContent(editor);
 
 		// Show editor only after camera is initialized to prevent drawing with wrong coordinates
 		if(editorWrapperRefEl.current) {
@@ -222,6 +226,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			} else {
 				initWritingCamera(editor, props.embedded ? 0 : MENUBAR_HEIGHT_PX, props.scale);
 				cameraLimitsRef.current = initWritingCameraLimits(editor);
+				if(cappedEmbedCamera) scrollToPreviewPosition(editor);
 			}
 
 			// Companion bridge (experimental) — gated only by its own setting (not isEreader())
@@ -246,7 +251,6 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 				case Activity.CameraMovedAutomatically:
 				case Activity.CameraMovedManually:
 					if(cameraLimitsRef.current) restrictWritingCamera(editor, cameraLimitsRef.current, props.embedded ? 0 : MENUBAR_HEIGHT_PX);
-					unstashStaleContent(editor);
 					// Coalesced: a pinch or a scroll in a capped embed moves the camera on every
 					// pointer move, and each send now carries a DOM scan for exclusions.
 					queueBridgeUpdate();
@@ -398,6 +402,20 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			popupObserver.observe(document.body, { childList: true });
 		}
 
+		// Stashed strokes come back as they're scrolled up to. Watched through the viewport rather
+		// than the listener above because most scrolling here (wheel, finger swipe, scroll buttons)
+		// moves the camera silently, which that listener never sees, so they never came back.
+		// One check per frame, and outside the reaction, which mustn't change the store.
+		let unstashFrame = 0;
+		const stopUnstashWatch = react('unstash strokes scrolled into view', () => {
+			editor.getViewportPageBounds();
+			if (unstashFrame) return;
+			unstashFrame = requestAnimationFrame(() => {
+				unstashFrame = 0;
+				if (!editor.isDisposed) unstashScrolledIntoView(editor);
+			});
+		});
+
 		// Inserting space has to move every stroke, including the old ones stashed to keep writing
 		// fast, so they're put back on the page while that tool is out and stashed again after.
 		let wasInsertingSpace = false;
@@ -422,6 +440,8 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			resetInputPostProcessTimers();
 			removeUserActionListener();
 			stopInsertSpaceWatch();
+			stopUnstashWatch();
+			cancelAnimationFrame(unstashFrame);
 			if (tlCanvas) {
 				tlCanvas.removeEventListener('keydown', handleKeyDown);
 				for (const name of bridgePointerEventNames) {
@@ -525,6 +545,19 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	function getBridgeStyle(): BridgeStyle {
 		// TODO: pull from the editor's current stroke style/theme once this leaves the spike stage.
 		return { color: '#000000', width: 2 };
+	}
+
+	// The preview is drawn at the editor's zoom, from the top of the page, so its scrolled px over
+	// the zoom are page units.
+	function scrollToPreviewPosition(editor: Editor) {
+		const scrolledPx = props.getPreviewScrollPx?.() ?? 0;
+		if (scrolledPx <= 0) return;
+		const camera = editor.getCamera();
+		const { yMin, yMax } = getWritingCameraYBounds(editor, 0);
+		const y = Math.max(yMin, Math.min(yMax, -scrolledPx / camera.z));
+		silentlyChangeStore(editor, () => {
+			editor.setCamera({ x: camera.x, y, z: camera.z });
+		});
 	}
 
 	function resizeContainerIfEmbed (editor: Editor) {

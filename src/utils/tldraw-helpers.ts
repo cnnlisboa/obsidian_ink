@@ -419,8 +419,10 @@ export function getWritingCameraYBounds(editor: Editor, topMarginPx: number = ME
 	// fullscreen; flush to the top in a height-capped embed, which has no menubar above the page).
 	const yMax = topMarginPx;
 
-	// Lower limit: last line of content must remain on screen
-	const yMinRaw = bounds ? viewportH - BOTTOM_MARGIN_PX - bounds.maxY * zoom : yMax;
+	// Lower limit: last line of content must remain on screen. camera.y is in page units (the page
+	// y at the top of the viewport is -camera.y), so the screen-px viewport is divided by the zoom.
+	// Multiplying the content by it instead stopped scrolling short of the end at any zoom below 1.
+	const yMinRaw = bounds ? (viewportH - BOTTOM_MARGIN_PX) / zoom - bounds.maxY : yMax;
 	// If document fits entirely on screen, yMin >= yMax, so clamp to yMax (no scrolling needed)
 	const yMin = Math.min(yMax, yMinRaw);
 
@@ -534,33 +536,56 @@ function getIncompleteShapes(editor: Editor) {
 	return incompleteShapes;
 }
 
+/**
+ * The page y above which strokes may be stashed: half a viewport above what's on screen, so a short
+ * scroll up doesn't uncover strokes still on their way back.
+ */
+function getStashLine(editor: Editor): number {
+	const viewport = editor.getViewportPageBounds();
+	return viewport.minY - viewport.h / 2;
+}
+
 export const useStash = (plugin: InkPlugin) => {
 	const stash = useRef<TLShape[]>([]);
+	// Each stashed shape's bottom edge, measured while it was still on the page to be measured.
+	const stashedMaxY = useRef(new Map<TLShapeId, number>());
 
+	/**
+	 * Takes the oldest strokes off the page while the editor is open, to keep writing fast on long
+	 * files. Only strokes entirely above the screen go, topmost first: hiding the top of the page
+	 * by position alone used to blank whatever the user had scrolled up to read. Keeping everything
+	 * below also keeps the content's bottom edge intact, which the camera bounds and the template's
+	 * resizing both measure from the live store.
+	 */
 	const stashStaleContent = (editor: Editor) => {
 		// Inserting space moves everything below a point, so every stroke has to be on the page
 		// while that tool is out. The writing editor unstashes when it's picked up.
 		if (editor.getCurrentToolId() === INSERT_SPACE_TOOL_ID) return;
-		const completeShapes = getCompleteShapes(editor);
+		// Only ink is stashed.
+		const completeShapes = getCompleteShapes(editor).filter(shape => isInkShapeType(shape.type));
 
 		// On e-readers, cap the live-shape limit lower so fewer <path> elements have to repaint.
 		const effectiveLimit = isEreader()
 			? Math.min(plugin.settings.writingStrokeLimit, WRITE_STROKE_LIMIT_EREADER)
 			: plugin.settings.writingStrokeLimit;
+		const excess = completeShapes.length - effectiveLimit;
+		if (excess <= 0) return;
 
+		const stashLine = getStashLine(editor);
 		const staleShapeIds: TLShapeId[] = [];
 		const staleShapes: TLShape[] = [];
 
-		// TODO: Order shapes by vertical position
-		for (let i = 0; i <= completeShapes.length - effectiveLimit; i++) {
-			const record = completeShapes[i];
-			// Only ink is stashed. Skipped rather than returned on: anything else here used to
-			// abandon stashing altogether.
-			if (!isInkShapeType(record.type)) continue;
+		// Sorted by y, so this works down from the top of the page.
+		for (const shape of completeShapes) {
+			if (staleShapes.length >= excess) break;
+			const maxY = editor.getShapePageBounds(shape)?.maxY;
+			if (maxY === undefined || maxY >= stashLine) continue;
 
-			staleShapeIds.push(record.id as TLShapeId);
-			staleShapes.push(record as TLShape);
+			staleShapeIds.push(shape.id);
+			staleShapes.push(shape);
+			stashedMaxY.current.set(shape.id, maxY);
 		}
+		if (staleShapes.length === 0) return;
 
 		stash.current.push(...staleShapes);
 		silentlyChangeStore(editor, () => {
@@ -581,12 +606,33 @@ export const useStash = (plugin: InkPlugin) => {
 			editor.store.put(stash.current);
 		});
 		stash.current.length = 0;
+		stashedMaxY.current.clear();
+	};
+
+	/** Puts back the stashed strokes the user has scrolled up to, leaving the rest stashed. */
+	const unstashScrolledIntoView = (editor: Editor) => {
+		if (stash.current.length === 0) return;
+		const stashLine = getStashLine(editor);
+
+		const returning: TLShape[] = [];
+		const staying: TLShape[] = [];
+		for (const shape of stash.current) {
+			const maxY = stashedMaxY.current.get(shape.id) ?? Infinity;
+			(maxY >= stashLine ? returning : staying).push(shape);
+		}
+		if (returning.length === 0) return;
+
+		stash.current = staying;
+		returning.forEach(shape => stashedMaxY.current.delete(shape.id));
+		silentlyChangeStore(editor, () => {
+			editor.store.put(returning);
+		});
 	};
 
 	// Read-only accessor so callers can build merged snapshots without mutating the live store.
 	const getStashedShapes = (): TLShape[] => stash.current;
 
-	return { stashStaleContent, unstashStaleContent, getStashedShapes };
+	return { stashStaleContent, unstashStaleContent, unstashScrolledIntoView, getStashedShapes };
 };
 
 export const hideWritingTemplate = (editor: Editor) => {

@@ -157,7 +157,7 @@
 
 // A height-capped embed scrolls its own content instead of growing the note.
 // In preview the container scrolls over the taller SVG; in the editor the tldraw
-// camera does the scrolling, so overflow only needs to be contained there.
+// camera does the scrolling, so this is only applied while the preview shows.
 .inkc_resize-container.inkc_height-capped {
     overflow-y: auto;
     overflow-x: hidden;

@@ -71,6 +71,8 @@ export function WritingEmbed (props: {
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
+	// How far a height-capped preview was scrolled when the editor was opened from it.
+	const previewScrollPxRef = useRef(0);
 	// const previewFilePath = getPreviewFileResourcePath(props.plugin, props.fileRef)
 	// const [embedId] = useState<string>(nanoid());
 	// const activeEmbedId = useSelector((state: GlobalSessionState) => state.activeEmbedId);
@@ -101,6 +103,7 @@ export function WritingEmbed (props: {
 	const [title, setTitle] = useState(props.writingFileRef.basename);
 	const showTitle = props.embedData?.showTitle ?? false;
 	const editorActive = useAtomValue(editorActiveAtom);
+	const embedState = useAtomValue(embedStateAtom);
 
 	function handleCollapsedChange(value: boolean) {
 		setCollapsed(value);
@@ -203,6 +206,12 @@ export function WritingEmbed (props: {
 		},
 	]
 
+	// The editor opens on whatever part of the page the preview was scrolled to, not the top.
+	const openEditor = () => {
+		previewScrollPxRef.current = resizeContainerElRef.current?.scrollTop ?? 0;
+		embedEditor.open();
+	};
+
 	const openFullscreen = () => openInkFile(
 		props.plugin,
 		props.writingFileRef,
@@ -212,7 +221,7 @@ export function WritingEmbed (props: {
 	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
 	// everything an embed can do is reachable from one place.
 	const previewMenuOptions = [
-		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', editsNote: true, action: () => embedEditor.open() },
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', editsNote: true, action: openEditor },
 		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
 		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', editsNote: true, action: () => handleCollapsedChange(true) },
 		...commonExtendedOptions,
@@ -282,7 +291,11 @@ export function WritingEmbed (props: {
 				<div
 					className = {classNames([
 						'inkc_resize-container',
-						props.embedData?.maxHeight && 'inkc_height-capped',
+						// Only while the preview shows. The scrolling it needs clips everything outside
+						// the container, which includes the editor's toolbar sitting just above it: the
+						// toolbar was invisible, and clicks on it fell through to the note and closed
+						// the editor. The editor scrolls its own camera, so it doesn't need it.
+						props.embedData?.maxHeight && embedState !== WritingEmbedState.editor && 'inkc_height-capped',
 					])}
 					ref = {resizeContainerElRef}
 					style = {{
@@ -303,7 +316,7 @@ export function WritingEmbed (props: {
 						writingFile = {props.writingFileRef}
 						onCollapseClick = {() => handleCollapsedChange(true)}
 						onFullscreenClick = {openFullscreen}
-						onClick = {() => embedEditor.open()}
+						onClick = {openEditor}
 						menuOptions = {previewMenuOptions}
 					/>
 
@@ -317,6 +330,7 @@ export function WritingEmbed (props: {
 						closeEditor = {embedEditor.close}
 						maxHeight = {props.embedData?.maxHeight}
 						scale = {props.embedData?.scale}
+						getPreviewScrollPx = {() => previewScrollPxRef.current}
 						onOpenClick = {async () => {
 							// Saved and closed first, so the full screen editor opens on everything
 							// written here and the two never edit the same file at once.
