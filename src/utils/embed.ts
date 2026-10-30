@@ -262,7 +262,10 @@ export function applyCommonAncestorStyling(embedEl: HTMLElement) {
 	// Negating that padding would blow past the column to full viewport width, so skip it.
 	if(document.body.classList.contains('is-readable-line-width')) return;
 
-	const parentPageScrollerEl = embedEl.closest('.cm-scroller') as HTMLElement;
+	// An embed block without a note scroller around it (a note embedded in another, a hover
+	// preview) has no padding to negate.
+	const parentPageScrollerEl = embedEl.closest('.cm-scroller') as HTMLElement | null;
+	if(!parentPageScrollerEl) return;
 	const scrollerStyle = window.getComputedStyle(parentPageScrollerEl);
 
 	const scrollerInlineStartMargin = scrollerStyle.paddingInlineStart;
