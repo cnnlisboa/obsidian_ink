@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from 'src/types/plugin-settings';
 import { setNewWritingLineHeight } from 'src/utils/tldraw-helpers';
 import { showWelcomeTips, showWelcomeTips_maybe } from 'src/notices/welcome-notice';
 import { ToggleAccordionSetting } from 'src/components/dom-components/toggle-accordion-setting';
+import { isEreader } from 'src/utils/isEreader';
 
 /////////
 /////////
@@ -27,11 +28,11 @@ export class MySettingsTab extends PluginSettingTab {
 		const {containerEl} = this;
 
 		containerEl.empty();
-		
-		containerEl.createEl('h1').setText('Ink');
+
+		// Obsidian already titles the tab with the plugin's name, so it opens straight onto a
+		// one-line summary rather than repeating it as a heading.
 		containerEl.createEl('p').setText('Hand write or draw directly between paragraphs in your notes.');
-		
-		containerEl.createEl('hr');
+
 		insertMoreInfoLinks(containerEl);
 		insertPrereleaseWarning(containerEl);
 		insertSetupGuide(this.plugin, containerEl);
@@ -39,14 +40,18 @@ export class MySettingsTab extends PluginSettingTab {
 		insertHighLevelSettings(containerEl, this.plugin, () => this.display());
 		insertSubfolderSettings(containerEl, this.plugin, () => this.display());
 
-		containerEl.createEl('hr');
 		if(this.plugin.settings.writingEnabled)	insertWritingSettings(containerEl, this.plugin, () => this.display());
 		if(this.plugin.settings.notebookEnabled)	insertNotebookSettings(containerEl, this.plugin, () => this.display());
 		if(this.plugin.settings.drawingEnabled)	insertDrawingSettings(containerEl, this.plugin, () => this.display());
-	
+
+		insertHeading(containerEl, 'Reset');
 		new Setting(containerEl)
+			.setClass('inkc_setting')
+			.setName('Reset settings')
+			.setDesc('Restore every Ink setting to its default. Your writing and drawing files are not affected.')
 			.addButton( (button) => {
-				button.setButtonText('Reset settings');
+				button.setButtonText('Reset');
+				button.setWarning();
 				button.onClick(() => {
 					new ConfirmationModal({
 						plugin: this.plugin,
@@ -109,31 +114,21 @@ function insertMoreInfoLinks(containerEl: HTMLElement) {
 	});
 }
 
+/**
+ * A native Obsidian settings heading. Used instead of raw <h2>s so section titles match the
+ * typography and spacing of every core settings tab.
+ */
+function insertHeading(containerEl: HTMLElement, name: string, desc?: string) {
+	const heading = new Setting(containerEl)
+		.setName(name)
+		.setHeading();
+	if (desc) heading.setDesc(desc);
+	return heading;
+}
+
 function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, refresh: Function) {
 
-	new Setting(containerEl)
-		.setClass('inkc_setting')
-		.setName('Create companion note')
-		.setDesc('When using "New handwriting note" or "New drawing note" commands, create a markdown note containing the embed. When disabled, the ink file is created and opened directly without a companion note.')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.createCompanionNote);
-			toggle.onChange(async (value) => {
-				plugin.settings.createCompanionNote = value;
-				await plugin.saveSettings();
-			});
-		});
-
-	new Setting(containerEl)
-		.setClass('inkc_setting')
-		.setName('Name files after their note')
-		.setDesc('New writing, notebook and drawing files are named after the note they are first embedded in, rather than the date and time they were created. A number is appended when a note holds more than one. Renaming an embed later still renames its file.')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.nameFilesAfterNote);
-			toggle.onChange(async (value) => {
-				plugin.settings.nameFilesAfterNote = value;
-				await plugin.saveSettings();
-			});
-		});
+	insertHeading(containerEl, 'General');
 
 	new Setting(containerEl)
 		.setClass('inkc_setting')
@@ -173,6 +168,32 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 				plugin.settings.drawingEnabled = value;
 				await plugin.saveSettings();
 				refresh();
+			});
+		});
+
+	insertHeading(containerEl, 'Files');
+
+	new Setting(containerEl)
+		.setClass('inkc_setting')
+		.setName('Create companion note')
+		.setDesc('When using "New handwriting note" or "New drawing note" commands, create a markdown note containing the embed. When disabled, the ink file is created and opened directly without a companion note.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.createCompanionNote);
+			toggle.onChange(async (value) => {
+				plugin.settings.createCompanionNote = value;
+				await plugin.saveSettings();
+			});
+		});
+
+	new Setting(containerEl)
+		.setClass('inkc_setting')
+		.setName('Name files after their note')
+		.setDesc('New writing, notebook and drawing files are named after the note they are first embedded in, rather than the date and time they were created. A number is appended when a note holds more than one. Renaming an embed later still renames its file.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.nameFilesAfterNote);
+			toggle.onChange(async (value) => {
+				plugin.settings.nameFilesAfterNote = value;
+				await plugin.saveSettings();
 			});
 		});
 
@@ -343,9 +364,8 @@ function insertNotebookSettings(containerEl: HTMLElement, plugin: InkPlugin, ref
 		refresh();
 	}
 
-	const sectionEl = containerEl.createDiv('inkc_section inkc_controls-section');
-	sectionEl.createEl('h2', { text: 'Notebook' });
-	sectionEl.createEl('p', { text: `Notebook mode provides page-based writing with fixed pages and page navigation. Run the action 'New notebook section' to embed a notebook.` });
+	const sectionEl = containerEl;
+	insertHeading(sectionEl, 'Notebook', `Page-based writing with fixed pages and page navigation. Run the command 'New notebook section' to embed a notebook.`);
 
 	const linesPerPageSetting = new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -389,9 +409,8 @@ function insertNotebookSettings(containerEl: HTMLElement, plugin: InkPlugin, ref
 }
 
 function insertDrawingSettings(containerEl: HTMLElement, plugin: InkPlugin, refresh: Function) {
-	const sectionEl = containerEl.createDiv('inkc_section inkc_controls-section');
-	sectionEl.createEl('h2', { text: 'Drawing' });
-	sectionEl.createEl('p', { text: `While editing a Markdown file, run the action 'Insert new hand drawn section' to embed a drawing canvas.` });
+	const sectionEl = containerEl;
+	insertHeading(sectionEl, 'Drawing', `While editing a note, run the command 'New drawing' to embed a drawing canvas.`);
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -457,9 +476,8 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 		refresh();
 	}
 
-	const sectionEl = containerEl.createDiv('inkc_section inkc_controls-section');
-	sectionEl.createEl('h2', { text: 'Writing' });
-	sectionEl.createEl('p', { text: `While editing a Markdown file, run the action 'Insert new handwriting section' to embed a section for writing with a stylus.` });
+	const sectionEl = containerEl;
+	insertHeading(sectionEl, 'Writing', `While editing a note, run the command 'New handwriting section' to embed a section for writing with a stylus.`);
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -486,7 +504,7 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 				refresh();
 			})
 		});
-	
+
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
 		.setName('Dynamic stroke thickness')
@@ -501,6 +519,24 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
+		.setName('Line height for new writing')
+		.setDesc(`How far apart the ruled lines sit in newly created writing files, in page units. Lower means denser, smaller handwriting and more lines per page. Default: ${DEFAULT_SETTINGS.writingLineHeight}. This is stored in each file as it's created, so changing it here never re-rules writing you've already done — existing ink would stay put while the lines moved out from under it.`)
+
+		.addText((textItem) => {
+			textItem.setValue(plugin.settings.writingLineHeight.toString());
+			textItem.setPlaceholder(DEFAULT_SETTINGS.writingLineHeight.toString());
+			textItem.inputEl.addEventListener('blur', async (ev: FocusEvent) => {
+				saveWritingLineHeight(textItem.getValue())
+			})
+			textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
+				if(ev.key === 'Enter') saveWritingLineHeight(textItem.getValue())
+			})
+		});
+
+	insertHeading(sectionEl, 'Writing input');
+
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
 		.setName('Stylus only input')
 		.setDesc('When enabled, only stylus/pen input is accepted. Touch input from fingers and palms is blocked. Useful for devices with active pens like Onyx Boox or iPad with Apple Pencil.')
 		.addToggle((toggle) => {
@@ -508,8 +544,25 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			toggle.onChange(async (value: boolean) => {
 				plugin.settings.stylusOnlyInput = value;
 				await plugin.saveSettings();
+				refresh();
 			});
 		});
+
+	// Finger swipe scrolling only exists while fingers aren't writing, which is always the case on
+	// e-ink devices regardless of the setting (see initialStylusOnly in the writing editor).
+	if(plugin.settings.stylusOnlyInput || isEreader()) {
+		new Setting(sectionEl)
+			.setClass('inkc_setting')
+			.setName('Finger swipe scroll')
+			.setDesc('Swipe with a finger to scroll the page within writing embeds, while the pen keeps writing.')
+			.addToggle((toggle) => {
+				toggle.setValue(plugin.settings.fingerSwipeScroll);
+				toggle.onChange(async (value: boolean) => {
+					plugin.settings.fingerSwipeScroll = value;
+					await plugin.saveSettings();
+				});
+			});
+	}
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -542,17 +595,7 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 		portSettingEl.settingEl.classList.add('inkc_input-medium');
 	}
 
-	new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Finger swipe scroll')
-		.setDesc('Allow finger swipe gestures to scroll the page within writing embeds. Requires Stylus only input to be enabled.')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.fingerSwipeScroll);
-			toggle.onChange(async (value: boolean) => {
-				plugin.settings.fingerSwipeScroll = value;
-				await plugin.saveSettings();
-			});
-		});
+	insertHeading(sectionEl, 'Writing navigation');
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -590,6 +633,8 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			});
 		});
 
+	insertHeading(sectionEl, 'Page growth');
+
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
 		.setName('Manual line add')
@@ -599,30 +644,35 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			toggle.onChange(async (value: boolean) => {
 				plugin.settings.writingManualLineAdd = value;
 				await plugin.saveSettings();
+				refresh();
 			});
 		});
 
-	new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Lines per manual add')
-		.setDesc('Number of lines added each time the + button is clicked in manual line add mode.')
-		.addText((textItem) => {
-			textItem.setValue(plugin.settings.writingManualLineAddCount.toString());
-			textItem.setPlaceholder(DEFAULT_SETTINGS.writingManualLineAddCount.toString());
-			const saveLineAddCount = (value: string) => {
-				const num = parseInt(value);
-				if (!isNaN(num) && num > 0) {
-					plugin.settings.writingManualLineAddCount = num;
-					plugin.saveSettings();
-				} else {
-					textItem.setValue(plugin.settings.writingManualLineAddCount.toString());
-				}
-			};
-			textItem.inputEl.addEventListener('blur', (ev: FocusEvent) => saveLineAddCount(textItem.getValue()));
-			textItem.inputEl.addEventListener('keypress', (ev: KeyboardEvent) => {
-				if (ev.key === 'Enter') saveLineAddCount(textItem.getValue());
+	if(plugin.settings.writingManualLineAdd) {
+		new Setting(sectionEl)
+			.setClass('inkc_setting')
+			.setName('Lines per manual add')
+			.setDesc('Number of lines added each time the + button is clicked in manual line add mode.')
+			.addText((textItem) => {
+				textItem.setValue(plugin.settings.writingManualLineAddCount.toString());
+				textItem.setPlaceholder(DEFAULT_SETTINGS.writingManualLineAddCount.toString());
+				const saveLineAddCount = (value: string) => {
+					const num = parseInt(value);
+					if (!isNaN(num) && num > 0) {
+						plugin.settings.writingManualLineAddCount = num;
+						plugin.saveSettings();
+					} else {
+						textItem.setValue(plugin.settings.writingManualLineAddCount.toString());
+					}
+				};
+				textItem.inputEl.addEventListener('blur', (ev: FocusEvent) => saveLineAddCount(textItem.getValue()));
+				textItem.inputEl.addEventListener('keypress', (ev: KeyboardEvent) => {
+					if (ev.key === 'Enter') saveLineAddCount(textItem.getValue());
+				});
 			});
-		});
+	}
+
+	insertHeading(sectionEl, 'Writing performance');
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
@@ -638,22 +688,6 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			})
 			textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
 				if(ev.key === 'Enter') saveWritingStrokeLimit(textItem.getValue())
-			})
-		});
-
-	new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Line height for new writing')
-		.setDesc(`How far apart the ruled lines sit in newly created writing files, in page units. Lower means denser, smaller handwriting and more lines per page. Default: ${DEFAULT_SETTINGS.writingLineHeight}. This is stored in each file as it's created, so changing it here never re-rules writing you've already done — existing ink would stay put while the lines moved out from under it.`)
-
-		.addText((textItem) => {
-			textItem.setValue(plugin.settings.writingLineHeight.toString());
-			textItem.setPlaceholder(DEFAULT_SETTINGS.writingLineHeight.toString());
-			textItem.inputEl.addEventListener('blur', async (ev: FocusEvent) => {
-				saveWritingLineHeight(textItem.getValue())
-			})
-			textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
-				if(ev.key === 'Enter') saveWritingLineHeight(textItem.getValue())
 			})
 		});
 
