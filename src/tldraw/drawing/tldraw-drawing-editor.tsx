@@ -8,7 +8,7 @@ import { svgToPngDataUri } from 'src/utils/screenshots';
 import { TFile } from 'obsidian';
 import { savePngExport } from "src/utils/savePngExport";
 import { duplicateWritingFile, rememberDrawingFile } from "src/utils/rememberDrawingFile";
-import { InkFileData, buildDrawingFileData } from 'src/utils/page-file';
+import { InkFileData, InkPreview, buildDrawingFileData, getInkPreview } from 'src/utils/page-file';
 import { DRAW_SHORT_DELAY_MS, DRAW_LONG_DELAY_MS, DRAW_LONG_DELAY_MS_EREADER, DRAWING_INITIAL_ASPECT_RATIO } from 'src/constants';
 import { PrimaryMenuBar } from '../primary-menu-bar/primary-menu-bar';
 import DrawingMenu from '../drawing-menu/drawing-menu';
@@ -85,6 +85,11 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 	const shortDelayPostProcessTimeoutRef = useRef<NodeJS.Timeout>();
 	const longDelayPostProcessTimeoutRef = useRef<NodeJS.Timeout>();
 	const tlEditorRef = useRef<Editor>();
+	// The last preview generated for this file, carried forward by saves that don't regenerate it.
+	// See InkPreview.
+	const lastPreviewRef = useRef<InkPreview>({});
+	// True from the moment a stroke schedules a save until one is written. See the onMount teardown.
+	const savePendingRef = useRef<boolean>(false);
 	const editorWrapperRefEl = useRef<HTMLDivElement>(null);
 
 	const initialStylusOnly = props.plugin.settings.stylusOnlyInput || isEreader();
@@ -227,6 +232,13 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 		if(props.onReady) props.onReady();
 
 		return () => {
+			// An embed's save is bound to its own file, so a stroke still waiting on the short save
+			// timer is written now rather than dropped — this is what runs when the note is switched
+			// away from with the editor still open. A view's save follows whichever file it shows
+			// next, so there it's still dropped, as unmountActions has always done.
+			if (props.embedded && savePendingRef.current) {
+				incrementalSave(editor).catch((e) => warn(['Could not save on close', e]));
+			}
 			unmountActions();
 		};
 	}
@@ -236,6 +248,7 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.drawingFile)
+        lastPreviewRef.current = getInkPreview(inkFileData);
         if(inkFileData.tldraw) {
             const snapshot = prepareDrawingSnapshot(inkFileData.tldraw as TLEditorSnapshot);
             setTlEditorSnapshot(snapshot);
@@ -261,6 +274,7 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 	const smallDelayInputPostProcess = (editor: Editor) => {
 		resetShortPostProcessTimer();
 
+		savePendingRef.current = true;
 		shortDelayPostProcessTimeoutRef.current = setTimeout(
 			() => {
 				incrementalSave(editor);
@@ -294,14 +308,22 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 		resetLongPostProcessTimer();
 	}
 
+	// Every save goes through here, so the teardown flush knows whether one is still owed.
+	const saveFileData = (pageData: InkFileData) => {
+		savePendingRef.current = false;
+		props.save(pageData);
+	}
+
 	const incrementalSave = async (editor: Editor) => {
 		verbose('incrementalSave');
 		const tlEditorSnapshot = getSnapshot(editor.store);
 		const pageData = buildDrawingFileData({
 			tlEditorSnapshot: tlEditorSnapshot,
+			previewUri: lastPreviewRef.current.previewUri,
+			previewBounds: lastPreviewRef.current.previewBounds,
 			previewIsOutdated: true,
 		})
-		props.save(pageData);
+		saveFileData(pageData);
 	}
 
 	const completeSave = async (editor: Editor, forceSvg: boolean = false): Promise<void> => {
@@ -312,8 +334,10 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 		// back when the file renders as an embed. saveAndHalt forces it so the closing
 		// snapshot still gets a preview.
 		if (isEreader() && !forceSvg) {
-			props.save(buildDrawingFileData({
+			saveFileData(buildDrawingFileData({
 				tlEditorSnapshot: getSnapshot(editor.store),
+				previewUri: lastPreviewRef.current.previewUri,
+				previewBounds: lastPreviewRef.current.previewBounds,
 				previewIsOutdated: true,
 			}));
 			return;
@@ -334,6 +358,8 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 		const previewBounds = pageBounds
 			? { x: pageBounds.x, y: pageBounds.y, w: pageBounds.w, h: pageBounds.h }
 			: undefined;
+		// Undefined when there's nothing left to render, which is correct to carry forward too.
+		lastPreviewRef.current = previewUri ? { previewUri, previewBounds } : {};
 
 		if(previewUri) {
 			const pageData = buildDrawingFileData({
@@ -341,14 +367,14 @@ export function TldrawDrawingEditor(props: TldrawDrawingEditorProps) {
 				previewUri,
 				previewBounds,
 			})
-			props.save(pageData);
+			saveFileData(pageData);
 			// savePngExport(props.plugin, previewUri, props.fileRef)
 
 		} else {
 			const pageData = buildDrawingFileData({
 				tlEditorSnapshot: tlEditorSnapshot,
 			})
-			props.save(pageData);
+			saveFileData(pageData);
 		}
 
 		return;

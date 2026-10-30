@@ -20,6 +20,25 @@ export type InkFileData = {
 	pagePreviewUris?: string[];
 };
 
+/**
+ * The rendered-preview parts of a file. Saves that skip regenerating the preview — the frequent
+ * incremental ones, and every mid-session save on e-ink — carry the last one forward with
+ * `previewIsOutdated` set, rather than writing the file with no preview at all. A file without
+ * one shows as an empty embed, in reading mode and on any synced device, until the editor is
+ * next opened and locked.
+ */
+export type InkPreview = {
+	previewUri?: string,
+	pagePreviewUris?: string[],
+	previewBounds?: { x: number, y: number, w: number, h: number },
+};
+
+export const getInkPreview = (pageData: InkFileData): InkPreview => ({
+	previewUri: pageData.previewUri,
+	pagePreviewUris: pageData.pagePreviewUris,
+	previewBounds: pageData.meta?.previewBounds,
+});
+
 // Primary functions
 ///////
 

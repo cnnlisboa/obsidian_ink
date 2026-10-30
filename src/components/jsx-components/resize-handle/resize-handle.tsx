@@ -21,6 +21,7 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = (props) => {
 			'inkc_resize-handle',
 			'inkc_vertical',
 		])}
+		aria-label = "Drag to resize"
 		// onMouseDown={startResizing}
 		onPointerDown={startResizing}
 	>

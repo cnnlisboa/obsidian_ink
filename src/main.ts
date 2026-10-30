@@ -31,6 +31,7 @@ import { INK_FILE_EXTS } from './constants';
 import { drawDefaultSvgStr, writeDefaultSvgStr, writeExistingSvgStr, writePasteSvgStr } from './graphics/icons/command-icons';
 import { drawExistingSvgStr, drawPasteSvgStr } from './graphics/icons/command-icons';
 import { applyDeviceClasses } from './utils/device-classes';
+import { registerOpenEmbedDismissal } from './logic/open-embed';
 // Imported last so its cross-cutting rules land after every component stylesheet
 // in the bundled CSS, and win ties on equal specificity.
 import './styles/plugin-polish.scss';
@@ -45,6 +46,7 @@ export default class InkPlugin extends Plugin {
 		await this.loadSettings();
 
 		applyDeviceClasses(this);
+		registerOpenEmbedDismissal(this);
 
 		// const setPlugin = useSetAtom(inkPluginAtom);
 		// setPlugin(this);

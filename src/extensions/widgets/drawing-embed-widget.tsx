@@ -54,16 +54,20 @@ function updateEmbed(plugin: InkPlugin, ctx: MarkdownPostProcessorContext, el: H
 		const sectionInfo = ctx.getSectionInfo(el);
 		if(sectionInfo?.lineStart === undefined || sectionInfo.lineEnd === undefined) return;
 	
+		// Everything between the opening and closing fences, whatever the JSON's layout. This used
+		// to stop at the second character of the last JSON line, which only worked when that line
+		// was a lone closing brace: on a single-line block - every newly inserted drawing - it
+		// replaced just the opening brace and left the old JSON trailing after the new.
 		const embedStart: EditorPosition = {
 			line: sectionInfo.lineStart + 1,
 			ch: 0,
 		}
 		const embedEnd: EditorPosition = {
-			line: sectionInfo.lineEnd - 1,
-			ch: 1, // To allow for the closing } bracket
+			line: sectionInfo.lineEnd,
+			ch: 0,
 		}
 		
-		cmEditor.replaceRange( stringifyEmbedData(embedData), embedStart, embedEnd );
+		cmEditor.replaceRange( stringifyEmbedData(embedData) + '\n', embedStart, embedEnd );
 
 		// So even though it doesn't activate the visible cursor again when the embed updates & locks, it scrolls the cursors last position.
 		// This prevents that.

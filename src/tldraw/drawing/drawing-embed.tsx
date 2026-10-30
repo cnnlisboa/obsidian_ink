@@ -11,8 +11,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { DrawingEmbedPreview, DrawingEmbedPreviewWrapper } from "./drawing-embed-preview/drawing-embed-preview";
 import { openInkFile } from "src/utils/open-file";
 import { nanoid } from "nanoid";
-import { DrawingEmbedData, isInReadingMode } from "src/utils/embed";
-import { embedShouldActivateImmediately } from "src/utils/storage";
+import { DrawingEmbedData } from "src/utils/embed";
 import classNames from "classnames";
 import { atom, useAtom, useSetAtom } from "jotai";
 import { DRAWING_INITIAL_WIDTH, DRAWING_INITIAL_ASPECT_RATIO, DRAW_EMBED_KEY } from "src/constants";
@@ -23,6 +22,7 @@ import { CollapseIcon } from "src/graphics/icons/collapse-icon";
 import { ExpandIcon } from "src/graphics/icons/expand-icon";
 import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
 import { hasCoarsePointer } from "src/utils/device-classes";
+import { useEmbedEditor } from "../use-embed-editor";
 const emptyDrawingSvgStr = require('../../placeholders/empty-drawing-embed.svg');
 
 ///////
@@ -48,8 +48,8 @@ export const editorActiveAtom = atom<boolean>((get) => {
 ///////
 
 export type DrawingEditorControls = {
-	save: Function,
-	saveAndHalt: Function,
+	save: () => Promise<void>,
+	saveAndHalt: () => Promise<void>,
 }
 
 export function DrawingEmbed (props: {
@@ -68,11 +68,23 @@ export function DrawingEmbed (props: {
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
-	const editorControlsRef = useRef<DrawingEditorControls>();
 	const embedWidthRef = useRef<number>(props.width || DRAWING_INITIAL_WIDTH);
 	const embedAspectRatioRef = useRef<number>(props.aspectRatio || DRAWING_INITIAL_ASPECT_RATIO);
 
 	const setEmbedState = useSetAtom(embedStateAtom);
+	const embedEditor = useEmbedEditor<DrawingEditorControls>({
+		containerElRef: embedContainerElRef,
+		showEditor: () => {
+			verbose('Set DrawingEmbedState: loadingEditor');
+			applyEmbedHeight();
+			setEmbedState(DrawingEmbedState.loadingEditor);
+		},
+		showPreview: () => {
+			verbose('Set DrawingEmbedState: loadingPreview');
+			setEmbedState(DrawingEmbedState.loadingPreview);
+			props.setEmbedProps(embedWidthRef.current, embedAspectRatioRef.current);
+		},
+	});
 	const [collapsed, setCollapsed] = useState(props.embedData?.collapsed ?? false);
 	const [title, setTitle] = useState(props.drawingFileRef.basename);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -92,12 +104,6 @@ export function DrawingEmbed (props: {
 
 	// On first mount
 	React.useEffect( () => {
-		if(embedShouldActivateImmediately()) {
-			setTimeout( () => {
-				switchToEditMode();
-			},200);
-		}
-
 		window.addEventListener('resize', handleResize);
 		handleResize();
 
@@ -145,6 +151,21 @@ export function DrawingEmbed (props: {
 	]
 
 	////////////
+
+	const openFullscreen = () => openInkFile(
+		props.plugin,
+		props.drawingFileRef,
+		props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
+	);
+
+	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
+	// everything an embed can do is reachable from one place.
+	const previewMenuOptions = [
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', action: () => embedEditor.open() },
+		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
+		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', action: () => handleCollapsedChange(true) },
+		...commonExtendedOptions,
+	];
 
 	return <>
 		<div
@@ -242,14 +263,9 @@ export function DrawingEmbed (props: {
 						onReady = {() => {}}
 						drawingFile = {props.drawingFileRef}
 						onCollapseClick = {() => handleCollapsedChange(true)}
-						onFullscreenClick = {() => openInkFile(
-							props.plugin,
-							props.drawingFileRef,
-							props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-						)}
-						onClick = { async () => {
-							switchToEditMode();
-						}}
+						onFullscreenClick = {openFullscreen}
+						onClick = {() => embedEditor.open()}
+						menuOptions = {previewMenuOptions}
 						frame = {props.embedData?.frame}
 					/>
 
@@ -259,13 +275,14 @@ export function DrawingEmbed (props: {
 						drawingFile = {props.drawingFileRef}
 						save = {props.saveSrcFile}
 						embedded
-						saveControlsReference = {registerEditorControls}
-						closeEditor = {saveAndSwitchToPreviewMode}
-						onOpenClick = {() => openInkFile(
-							props.plugin,
-							props.drawingFileRef,
-							props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-						)}
+						saveControlsReference = {embedEditor.registerEditorControls}
+						closeEditor = {embedEditor.close}
+						onOpenClick = {async () => {
+							// Saved and closed first, so the full screen editor opens on everything
+							// drawn here and the two never edit the same file at once.
+							await embedEditor.close();
+							openFullscreen();
+						}}
 						frame = {props.embedData?.frame}
 						onSaveFrame = {props.onFrameChange && ((frame) => props.onFrameChange?.(frame))}
 						extendedMenu = {commonExtendedOptions}
@@ -280,10 +297,6 @@ export function DrawingEmbed (props: {
 
 	//// Helper functions
 	/////////////////////
-
-	function registerEditorControls(handlers: DrawingEditorControls) {
-		editorControlsRef.current = handlers;
-	}
 
 	function resizeEmbed(pxWidthDiff: number, pxHeightDiff: number) {
 		if(!resizeContainerElRef.current) return;
@@ -308,27 +321,6 @@ export function DrawingEmbed (props: {
 		resizeContainerElRef.current.style.width = embedWidthRef.current + 'px';
 		const curWidth = resizeContainerElRef.current.getBoundingClientRect().width;
 		resizeContainerElRef.current.style.height = curWidth/embedAspectRatioRef.current + 'px';
-	}
-
-	function switchToEditMode() {
-		// Reading mode has no editor to switch into and no editor to write changes back
-		// through, so the embed stays a static preview there. Checked live rather than at
-		// mount because Obsidian renders preview sections detached before inserting them.
-		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
-		verbose('Set DrawingEmbedState: loadingEditor')
-		applyEmbedHeight();
-		setEmbedState(DrawingEmbedState.loadingEditor);
-	}
-
-	async function saveAndSwitchToPreviewMode() {
-		verbose('Set DrawingEmbedState: loadingPreview');
-
-		if(editorControlsRef.current) {
-			await editorControlsRef.current.saveAndHalt();
-		}
-
-		setEmbedState(DrawingEmbedState.loadingPreview);
-		props.setEmbedProps(embedWidthRef.current, embedAspectRatioRef.current);
 	}
 
 	function handleResize() {

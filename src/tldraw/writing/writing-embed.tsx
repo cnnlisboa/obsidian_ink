@@ -12,9 +12,8 @@ import { GlobalSessionState } from "src/logic/stores";
 import { useDispatch } from 'react-redux';
 import { WritingEmbedPreviewWrapper } from "./writing-embed-preview/writing-embed-preview";
 import { openInkFile } from "src/utils/open-file";
-import { WritingEmbedData, isInReadingMode } from "src/utils/embed";
+import { WritingEmbedData } from "src/utils/embed";
 import { nanoid } from "nanoid";
-import { embedShouldActivateImmediately } from "src/utils/storage";
 import classNames from "classnames";
 import { atom, useSetAtom } from "jotai";
 import { getInkFileData } from "src/utils/getInkFileData";
@@ -26,6 +25,7 @@ import { hasCoarsePointer } from "src/utils/device-classes";
 import { EmbedHeightModal } from "src/modals/embed-height-modal/embed-height-modal";
 import { copyEmbedToClipboard } from "src/utils/embed-clipboard";
 import { WRITE_EMBED_KEY } from "src/constants";
+import { useEmbedEditor } from "../use-embed-editor";
 
 ///////
 ///////
@@ -50,8 +50,8 @@ export const editorActiveAtom = atom<boolean>((get) => {
 ///////
 
 export type WritingEditorControls = {
-	save: Function,
-	saveAndHalt: Function,
+	saveAndHalt: () => Promise<void>,
+	resize: () => void,
 }
 
 export function WritingEmbed (props: {
@@ -67,13 +67,23 @@ export function WritingEmbed (props: {
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
-	const editorControlsRef = useRef<WritingEditorControls>();
 	// const previewFilePath = getPreviewFileResourcePath(props.plugin, props.fileRef)
 	// const [embedId] = useState<string>(nanoid());
 	// const activeEmbedId = useSelector((state: GlobalSessionState) => state.activeEmbedId);
 	// const dispatch = useDispatch();
 
 	const setEmbedState = useSetAtom(embedStateAtom);
+	const embedEditor = useEmbedEditor<WritingEditorControls>({
+		containerElRef: embedContainerElRef,
+		showEditor: () => {
+			verbose('Set WritingEmbedState: loadingEditor');
+			setEmbedState(WritingEmbedState.loadingEditor);
+		},
+		showPreview: () => {
+			verbose('Set WritingEmbedState: loadingPreview');
+			setEmbedState(WritingEmbedState.loadingPreview);
+		},
+	});
 	const [collapsed, setCollapsed] = useState(props.embedData?.collapsed ?? false);
 	const [title, setTitle] = useState(props.writingFileRef.basename);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -90,17 +100,6 @@ export function WritingEmbed (props: {
 		setIsEditingTitle(false);
 		props.onTitleChange?.(trimmed);
 	}
-
-	// On first mount
-	React.useEffect( () => {
-		//console.log('EMBED mounted')
-		if(embedShouldActivateImmediately()) {
-			// dispatch({ type: 'global-session/setActiveEmbedId', payload: embedId })
-			setTimeout( () => {
-				switchToEditMode();
-			},200);	// TODO: Why is there a delay?
-		}
-	}, [])
 
 	// Whenever switching between readonly and edit mode
 	// React.useEffect( () => {
@@ -157,6 +156,21 @@ export function WritingEmbed (props: {
 		},
 	]
 
+	const openFullscreen = () => openInkFile(
+		props.plugin,
+		props.writingFileRef,
+		props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
+	);
+
+	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
+	// everything an embed can do is reachable from one place.
+	const previewMenuOptions = [
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', action: () => embedEditor.open() },
+		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
+		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', action: () => handleCollapsedChange(true) },
+		...commonExtendedOptions,
+	];
+
 	////////////
 
 	return <>
@@ -211,15 +225,11 @@ export function WritingEmbed (props: {
 							className="inkc_collapse-btn"
 							onPointerDown={(e) => {
 								e.stopPropagation();
-								openInkFile(
-									props.plugin,
-									props.writingFileRef,
-									props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-								);
+								openFullscreen();
 							}}
 							onMouseDown={(e) => e.stopPropagation()}
-						onClick={(e) => e.stopPropagation()}
-						aria-label="Open fullscreen"
+							onClick={(e) => e.stopPropagation()}
+							aria-label="Open fullscreen"
 						>
 							<FullscreenIcon />
 						</button>
@@ -261,16 +271,9 @@ export function WritingEmbed (props: {
 						onResize = {(height: number) => resizeContainer(height)}
 						writingFile = {props.writingFileRef}
 						onCollapseClick = {() => handleCollapsedChange(true)}
-						onFullscreenClick = {() => openInkFile(
-						props.plugin,
-						props.writingFileRef,
-						props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-					)}
-						onClick = {async (event) => {
-							// dispatch({ type: 'global-session/setActiveEmbedId', payload: embedId })
-							// setPageData( await refreshPageData(props.plugin, props.fileRef) );
-							switchToEditMode();
-						}}
+						onFullscreenClick = {openFullscreen}
+						onClick = {() => embedEditor.open()}
+						menuOptions = {previewMenuOptions}
 					/>
 
 					<TldrawWritingEditorWrapper
@@ -279,15 +282,16 @@ export function WritingEmbed (props: {
 						writingFile = {props.writingFileRef}
 						save = {props.save}
 						embedded
-						saveControlsReference = {registerEditorControls}
-						closeEditor = {saveAndSwitchToPreviewMode}
+						saveControlsReference = {embedEditor.registerEditorControls}
+						closeEditor = {embedEditor.close}
 						maxHeight = {props.embedData?.maxHeight}
 						scale = {props.embedData?.scale}
-						onOpenClick = {() => openInkFile(
-							props.plugin,
-							props.writingFileRef,
-							props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-						)}
+						onOpenClick = {async () => {
+							// Saved and closed first, so the full screen editor opens on everything
+							// written here and the two never edit the same file at once.
+							await embedEditor.close();
+							openFullscreen();
+						}}
 						extendedMenu = {commonExtendedOptions}
 					/>
 
@@ -299,10 +303,6 @@ export function WritingEmbed (props: {
 	
 	// Helper functions
 	///////////////////
-
-	function registerEditorControls(handlers: WritingEditorControls) {
-		editorControlsRef.current = handlers;
-	}
 
 	function resizeContainer(height: number) {
 		if(!resizeContainerElRef.current) return;
@@ -318,25 +318,6 @@ export function WritingEmbed (props: {
 		}, 100)
 	}
 
-	function switchToEditMode() {
-		// Reading mode has no editor to switch into and no editor to write changes back
-		// through, so the embed stays a static preview there. Checked live rather than at
-		// mount because Obsidian renders preview sections detached before inserting them.
-		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
-		verbose('Set WritingEmbedState: loadingEditor')
-		setEmbedState(WritingEmbedState.loadingEditor);
-	}
-	
-	async function saveAndSwitchToPreviewMode() {
-		verbose('Set WritingEmbedState: loadingPreview');
-
-		if(editorControlsRef.current) {
-			await editorControlsRef.current.saveAndHalt();
-		}
-
-		setEmbedState(WritingEmbedState.loadingPreview);
-	}
-	
 };
 
 export default WritingEmbed;

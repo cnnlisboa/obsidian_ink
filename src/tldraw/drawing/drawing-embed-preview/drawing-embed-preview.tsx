@@ -12,6 +12,8 @@ import { DrawingEmbedState, embedStateAtom, previewActiveAtom } from '../drawing
 import { getInkFileData } from 'src/utils/getInkFileData';
 import { CollapseIcon } from 'src/graphics/icons/collapse-icon';
 import { FullscreenIcon } from 'src/graphics/icons/fullscreen-icon';
+import { menuOption } from 'src/tldraw/overflow-menu/overflow-menu';
+import { useEmbedContextMenu } from 'src/tldraw/use-embed-context-menu';
 const emptyDrawingSvg = require('../../../placeholders/empty-drawing-embed.svg');
 
 //////////
@@ -26,6 +28,8 @@ interface DrawingEmbedPreviewProps {
 	onFullscreenClick?: () => void,
 	/** Crops the preview to this embed's saved framing. See src/utils/svg-framing.ts. */
 	frame?: { x: number, y: number, w: number, h: number },
+	/** Offered on right-click or long-press. See useEmbedContextMenu. */
+	menuOptions?: menuOption[],
 }
 
 // Wraps the component so that it can full unmount when inactive
@@ -47,6 +51,7 @@ export const DrawingEmbedPreview: React.FC<DrawingEmbedPreviewProps> = (props) =
 
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const setEmbedState = useSetAtom(embedStateAtom);
+    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? []);
     const [fileSrc, setFileSrc] = React.useState<string>(emptyDrawingSvg);
 
     React.useEffect(() => {
@@ -81,8 +86,13 @@ export const DrawingEmbedPreview: React.FC<DrawingEmbedPreviewProps> = (props) =
                 height: '100%',
                 pointerEvents: 'all',
             }}
-            onClick = {(e) => { e.stopPropagation(); props.onClick(e); }}
+            onClick = {(e) => {
+                e.stopPropagation();
+                if (contextMenu.consumeClick()) return;
+                props.onClick(e);
+            }}
             onMouseDown = {(e) => e.stopPropagation()}
+            {...(props.menuOptions ? contextMenu.handlers : {})}
 
             // Not currently doing this cause it can mean users easily lose their undo history
             // onMouseUp = {props.onEditClick}
@@ -155,7 +165,9 @@ export const DrawingEmbedPreview: React.FC<DrawingEmbedPreviewProps> = (props) =
         // Slight delay on transition because otherwise a flicker is sometimes seen
         setTimeout(() => {
             //console.log('--------------- SET EMBED STATE TO preview')
-            setEmbedState(DrawingEmbedState.preview);
+            // Only finishes a switch back from the editor. If the editor was opened while this image
+            // was still loading, the editor wins; forcing preview here used to cancel it.
+            setEmbedState((state) => state === DrawingEmbedState.loadingPreview ? DrawingEmbedState.preview : state);
             props.onReady();
         }, 100);
     }

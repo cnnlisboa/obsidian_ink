@@ -9,6 +9,8 @@ import { TFile } from 'obsidian';
 import { getInkFileData } from 'src/utils/getInkFileData';
 import { CollapseIcon } from 'src/graphics/icons/collapse-icon';
 import { FullscreenIcon } from 'src/graphics/icons/fullscreen-icon';
+import { menuOption } from 'src/tldraw/overflow-menu/overflow-menu';
+import { useEmbedContextMenu } from 'src/tldraw/use-embed-context-menu';
 const emptyWritingSvg = require('../../placeholders/empty-writing-embed.svg');
 
 //////////
@@ -23,6 +25,8 @@ interface NotebookEmbedPreviewProps {
     onFullscreenClick?: () => void,
     currentPage?: number,
     onPageChange?: (pageIndex: number) => void,
+    /** Offered on right-click or long-press. See useEmbedContextMenu. */
+    menuOptions?: menuOption[],
 }
 
 export const NotebookEmbedPreviewWrapper: React.FC<NotebookEmbedPreviewProps> = (props) => {
@@ -39,6 +43,7 @@ const NotebookEmbedPreview: React.FC<NotebookEmbedPreviewProps> = (props) => {
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const onLoadTimeoutRef = React.useRef<NodeJS.Timeout>();
     const setEmbedState = useSetAtom(notebookEmbedStateAtom);
+    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? []);
     const [fileSrc, setFileSrc] = React.useState<string>(emptyWritingSvg);
     const [totalPages, setTotalPages] = React.useState(1);
 
@@ -80,7 +85,11 @@ const NotebookEmbedPreview: React.FC<NotebookEmbedPreviewProps> = (props) => {
                 position: 'absolute',
                 width: '100%',
             }}
-            onClick={props.onClick}
+            onClick={(e) => {
+                if (contextMenu.consumeClick()) return;
+                props.onClick(e);
+            }}
+            {...(props.menuOptions ? contextMenu.handlers : {})}
         >
             {isImg && (<>
                 <img
@@ -173,7 +182,9 @@ const NotebookEmbedPreview: React.FC<NotebookEmbedPreviewProps> = (props) => {
     function onLoad() {
         recalcHeight();
         onLoadTimeoutRef.current = setTimeout(() => {
-            setEmbedState(NotebookEmbedState.preview);
+            // Only finishes a switch back from the editor. If the editor was opened while this image
+            // was still loading, the editor wins; forcing preview here used to cancel it.
+            setEmbedState((state) => state === NotebookEmbedState.loadingPreview ? NotebookEmbedState.preview : state);
         }, 100);
     }
 

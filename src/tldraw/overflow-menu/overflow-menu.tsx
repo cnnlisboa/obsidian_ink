@@ -15,6 +15,22 @@ export interface menuOption {
     section?: string,
 }
 
+/** Builds a native Obsidian menu from a list of options. */
+export function buildMenu(menuOptions: menuOption[]): Menu {
+    const menu = new Menu();
+
+    menuOptions.forEach(menuOption => {
+        menu.addItem((item) => {
+            item.setTitle(menuOption.text);
+            if (menuOption.icon) item.setIcon(menuOption.icon);
+            if (menuOption.section) item.setSection(menuOption.section);
+            item.onClick(() => menuOption.action());
+        });
+    });
+
+    return menu;
+}
+
 export const OverflowMenu: React.FC<{
     menuOptions: menuOption[]
 }> = (props) => {
@@ -23,18 +39,7 @@ export const OverflowMenu: React.FC<{
     // long as it's open, and rebuilding it each render was throwing away a Menu
     // instance per frame while the editor was active.
     const openMenu = (e: React.MouseEvent) => {
-        const menu = new Menu();
-
-        props.menuOptions.forEach(menuOption => {
-            menu.addItem((item) => {
-                item.setTitle(menuOption.text);
-                if (menuOption.icon) item.setIcon(menuOption.icon);
-                if (menuOption.section) item.setSection(menuOption.section);
-                item.onClick(() => menuOption.action());
-            });
-        });
-
-        menu.showAtMouseEvent(e.nativeEvent);
+        buildMenu(props.menuOptions).showAtMouseEvent(e.nativeEvent);
     };
 
     return <>

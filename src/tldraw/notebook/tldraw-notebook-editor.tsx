@@ -7,7 +7,7 @@ import { WritingMenu } from "../writing-menu/writing-menu";
 import InkPlugin from "../../main";
 import * as React from "react";
 import { MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, NOTEBOOK_LINE_HEIGHT, NOTEBOOK_PAGE_WIDTH } from 'src/constants';
-import { InkFileData, buildWritingFileData } from 'src/utils/page-file';
+import { InkFileData, InkPreview, buildWritingFileData, getInkPreview } from 'src/utils/page-file';
 import { TFile } from 'obsidian';
 import { PrimaryMenuBar } from '../primary-menu-bar/primary-menu-bar';
 import ExtendedWritingMenu from '../extended-writing-menu/extended-writing-menu';
@@ -18,7 +18,7 @@ import {getAssetUrlsByImport} from '@tldraw/assets/imports';
 import { NotebookEmbedState, notebookEmbedStateAtom, notebookEditorActiveAtom } from './notebook-embed';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { getInkFileData } from 'src/utils/getInkFileData';
-import { verbose } from 'src/utils/log-to-console';
+import { verbose, warn } from 'src/utils/log-to-console';
 import { isEreader } from 'src/utils/isEreader';
 import { EreaderDrawShapeUtil, setEreaderStreamline } from '../ereader-draw-shape-util';
 import { SecondaryMenuBar } from '../secondary-menu-bar/secondary-menu-bar';
@@ -89,6 +89,11 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 	const editorWrapperRefEl = useRef<HTMLDivElement>(null);
 	const { stashStaleContent, unstashStaleContent } = useStash(props.plugin);
 	const cameraLimitsRef = useRef<WritingCameraLimits>();
+	// The last preview generated for this file, carried forward by saves that don't regenerate it.
+	// See InkPreview.
+	const lastPreviewRef = useRef<InkPreview>({});
+	// True from the moment a stroke schedules a save until one is written. See the onMount teardown.
+	const savePendingRef = useRef<boolean>(false);
 	const [preventTransitions, setPreventTransitions] = React.useState<boolean>(true);
 
 	const linesPerPage = props.plugin.settings.notebookLinesPerPage;
@@ -254,6 +259,13 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 		}
 
 		return () => {
+			// An embed's save is bound to its own file, so a stroke still waiting on the short save
+			// timer is written now rather than dropped — this is what runs when the note is switched
+			// away from with the editor still open. A view's save follows whichever file it shows
+			// next, so there it's still dropped, as unmountActions has always done.
+			if (props.embedded && savePendingRef.current) {
+				incrementalSave(editor).catch((e) => warn(['Could not save on close', e]));
+			}
 			unmountActions();
 		};
 	}
@@ -292,6 +304,7 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 
 	const smallDelayInputPostProcess = (editor: Editor) => {
 		resetShortPostProcessTimer();
+		savePendingRef.current = true;
 		shortDelayPostProcessTimeoutRef.current = setTimeout(
 			() => {
 				incrementalSave(editor);
@@ -321,6 +334,12 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 		resetLongPostProcessTimer();
 	}
 
+	// Every save goes through here, so the teardown flush knows whether one is still owed.
+	const saveFileData = (pageData: InkFileData) => {
+		savePendingRef.current = false;
+		props.save(pageData);
+	}
+
 	const incrementalSave = async (editor: Editor) => {
 		verbose('notebook incrementalSave');
 		unstashStaleContent(editor);
@@ -329,9 +348,11 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 
 		const pageData = buildWritingFileData({
 			tlEditorSnapshot: tlEditorSnapshot,
+			previewUri: lastPreviewRef.current.previewUri,
+			pagePreviewUris: lastPreviewRef.current.pagePreviewUris,
 			previewIsOutdated: true,
 		})
-		props.save(pageData);
+		saveFileData(pageData);
 	}
 
 	const completeSave = async (editor: Editor, forceSvg: boolean = false): Promise<void> => {
@@ -346,8 +367,10 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 			unstashStaleContent(editor);
 			const snapshot = getSnapshot(editor.store);
 			stashStaleContent(editor);
-			props.save(buildWritingFileData({
+			saveFileData(buildWritingFileData({
 				tlEditorSnapshot: snapshot,
+				previewUri: lastPreviewRef.current.previewUri,
+				pagePreviewUris: lastPreviewRef.current.pagePreviewUris,
 				previewIsOutdated: true,
 			}));
 			return;
@@ -378,13 +401,15 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 
 		// Use first page as the main preview for backwards compat
 		const previewUri = pagePreviewUris[0] || undefined;
+		const savedPagePreviewUris = pagePreviewUris.length > 1 ? pagePreviewUris : undefined;
+		lastPreviewRef.current = { previewUri, pagePreviewUris: savedPagePreviewUris };
 
 		const pageData = buildWritingFileData({
 			tlEditorSnapshot,
 			previewUri,
-			pagePreviewUris: pagePreviewUris.length > 1 ? pagePreviewUris : undefined,
+			pagePreviewUris: savedPagePreviewUris,
 		});
-		props.save(pageData);
+		saveFileData(pageData);
 
 		return;
 	}
@@ -497,6 +522,7 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.notebookFile)
+        lastPreviewRef.current = getInkPreview(inkFileData);
         if(inkFileData.tldraw) {
             const snapshot = prepareWritingSnapshot(inkFileData.tldraw as TLEditorSnapshot);
             setTlEditorSnapshot(snapshot);

@@ -12,6 +12,8 @@ export interface PluginSettings {
 	// General
 	createCompanionNote: boolean,
 	nameFilesAfterNote: boolean,
+	// Save and close an open embed editor when tapping anywhere outside it.
+	closeEditorOnTapOutside: boolean,
 	customAttachmentFolders: boolean,
     noteAttachmentFolderLocation: 'obsidian' | 'root' | 'note',
     notelessAttachmentFolderLocation: 'obsidian' | 'root',
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	// General
 	createCompanionNote: true,
 	nameFilesAfterNote: true,
+	closeEditorOnTapOutside: true,
 	customAttachmentFolders: false,
     noteAttachmentFolderLocation: 'obsidian',
 	notelessAttachmentFolderLocation: 'obsidian',

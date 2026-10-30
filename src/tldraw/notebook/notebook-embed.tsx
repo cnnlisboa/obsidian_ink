@@ -8,8 +8,7 @@ import { TFile } from "obsidian";
 import { rememberWritingFile } from "src/utils/rememberDrawingFile";
 import { NotebookEmbedPreviewWrapper } from "./notebook-embed-preview";
 import { openInkFile } from "src/utils/open-file";
-import { NotebookEmbedData, isInReadingMode } from "src/utils/embed";
-import { embedShouldActivateImmediately } from "src/utils/storage";
+import { NotebookEmbedData } from "src/utils/embed";
 import classNames from "classnames";
 import { atom, useSetAtom } from "jotai";
 import { verbose } from "src/utils/log-to-console";
@@ -19,6 +18,7 @@ import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
 import { hasCoarsePointer } from "src/utils/device-classes";
 import { copyEmbedToClipboard } from "src/utils/embed-clipboard";
 import { NOTEBOOK_EMBED_KEY } from "src/constants";
+import { useEmbedEditor } from "../use-embed-editor";
 
 ///////
 ///////
@@ -43,8 +43,8 @@ export const notebookEditorActiveAtom = atom<boolean>((get) => {
 ///////
 
 export type NotebookEditorControls = {
-	save: Function,
-	saveAndHalt: Function,
+	saveAndHalt: () => Promise<void>,
+	resize: () => void,
 }
 
 export function NotebookEmbed (props: {
@@ -60,9 +60,19 @@ export function NotebookEmbed (props: {
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
-	const editorControlsRef = useRef<NotebookEditorControls>();
 
 	const setEmbedState = useSetAtom(notebookEmbedStateAtom);
+	const embedEditor = useEmbedEditor<NotebookEditorControls>({
+		containerElRef: embedContainerElRef,
+		showEditor: () => {
+			verbose('Set NotebookEmbedState: loadingEditor');
+			setEmbedState(NotebookEmbedState.loadingEditor);
+		},
+		showPreview: () => {
+			verbose('Set NotebookEmbedState: loadingPreview');
+			setEmbedState(NotebookEmbedState.loadingPreview);
+		},
+	});
 	const [collapsed, setCollapsed] = useState(props.embedData?.collapsed ?? false);
 	const [title, setTitle] = useState(props.notebookFileRef.basename);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -85,14 +95,6 @@ export function NotebookEmbed (props: {
 		setCurrentPage(pageIndex);
 		props.onPageChange?.(pageIndex);
 	}
-
-	React.useEffect( () => {
-		if(embedShouldActivateImmediately()) {
-			setTimeout( () => {
-				switchToEditMode();
-			},200);
-		}
-	}, [])
 
 	const commonExtendedOptions = [
 		{
@@ -125,6 +127,21 @@ export function NotebookEmbed (props: {
 	]
 
 	////////////
+
+	const openFullscreen = () => openInkFile(
+		props.plugin,
+		props.notebookFileRef,
+		props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
+	);
+
+	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
+	// everything an embed can do is reachable from one place.
+	const previewMenuOptions = [
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', action: () => embedEditor.open() },
+		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
+		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', action: () => handleCollapsedChange(true) },
+		...commonExtendedOptions,
+	];
 
 	return <>
 		<div
@@ -218,14 +235,9 @@ export function NotebookEmbed (props: {
 						onResize = {(height: number) => resizeContainer(height)}
 						notebookFile = {props.notebookFileRef}
 						onCollapseClick = {() => handleCollapsedChange(true)}
-						onFullscreenClick = {() => openInkFile(
-							props.plugin,
-							props.notebookFileRef,
-							props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-						)}
-						onClick = {async (event) => {
-							switchToEditMode();
-						}}
+						onFullscreenClick = {openFullscreen}
+						onClick = {() => embedEditor.open()}
+						menuOptions = {previewMenuOptions}
 						currentPage = {currentPage}
 						onPageChange = {handlePageChange}
 					/>
@@ -237,13 +249,14 @@ export function NotebookEmbed (props: {
 						save = {props.save}
 						embedded
 						initialPage = {currentPage}
-						saveControlsReference = {registerEditorControls}
-						closeEditor = {saveAndSwitchToPreviewMode}
-						onOpenClick = {() => openInkFile(
-							props.plugin,
-							props.notebookFileRef,
-							props.plugin.settings.closeNoteOnFullscreen ? props.plugin.app.workspace.activeLeaf : null
-						)}
+						saveControlsReference = {embedEditor.registerEditorControls}
+						closeEditor = {embedEditor.close}
+						onOpenClick = {async () => {
+							// Saved and closed first, so the full screen editor opens on everything
+							// written here and the two never edit the same file at once.
+							await embedEditor.close();
+							openFullscreen();
+						}}
 						extendedMenu = {commonExtendedOptions}
 						onPageChange = {handlePageChange}
 					/>
@@ -257,10 +270,6 @@ export function NotebookEmbed (props: {
 	// Helper functions
 	///////////////////
 
-	function registerEditorControls(handlers: NotebookEditorControls) {
-		editorControlsRef.current = handlers;
-	}
-
 	function resizeContainer(height: number) {
 		if(!resizeContainerElRef.current) return;
 		resizeContainerElRef.current.style.height = height + 'px';
@@ -268,25 +277,6 @@ export function NotebookEmbed (props: {
 			if(!resizeContainerElRef.current) return;
 			resizeContainerElRef.current.classList.add('inkc_smooth-transition');
 		}, 100)
-	}
-
-	function switchToEditMode() {
-		// Reading mode has no editor to switch into and no editor to write changes back
-		// through, so the embed stays a static preview there. Checked live rather than at
-		// mount because Obsidian renders preview sections detached before inserting them.
-		if(embedContainerElRef.current && isInReadingMode(embedContainerElRef.current)) return;
-		verbose('Set NotebookEmbedState: loadingEditor')
-		setEmbedState(NotebookEmbedState.loadingEditor);
-	}
-
-	async function saveAndSwitchToPreviewMode() {
-		verbose('Set NotebookEmbedState: loadingPreview');
-
-		if(editorControlsRef.current) {
-			await editorControlsRef.current.saveAndHalt();
-		}
-
-		setEmbedState(NotebookEmbedState.loadingPreview);
 	}
 
 };

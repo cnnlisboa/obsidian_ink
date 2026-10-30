@@ -7,7 +7,7 @@ import { WritingMenu } from "../writing-menu/writing-menu";
 import InkPlugin from "../../main";
 import * as React from "react";
 import { MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from 'src/constants';
-import { InkFileData, buildWritingFileData } from 'src/utils/page-file';
+import { InkFileData, InkPreview, buildWritingFileData, getInkPreview } from 'src/utils/page-file';
 import { TFile } from 'obsidian';
 import { PrimaryMenuBar } from '../primary-menu-bar/primary-menu-bar';
 import ExtendedWritingMenu from '../extended-writing-menu/extended-writing-menu';
@@ -18,7 +18,7 @@ import {getAssetUrlsByImport} from '@tldraw/assets/imports';
 import { editorActiveAtom, WritingEmbedState, embedStateAtom } from './writing-embed';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { getInkFileData } from 'src/utils/getInkFileData';
-import { verbose } from 'src/utils/log-to-console';
+import { verbose, warn } from 'src/utils/log-to-console';
 import { isEreader } from 'src/utils/isEreader';
 import { EreaderDrawShapeUtil, setEreaderStreamline } from '../ereader-draw-shape-util';
 import { CompanionBridgeClient } from 'src/utils/companion-bridge';
@@ -93,6 +93,11 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	const editorWrapperRefEl = useRef<HTMLDivElement>(null);
 	const { stashStaleContent, unstashStaleContent, getStashedShapes } = useStash(props.plugin);
 	const cameraLimitsRef = useRef<WritingCameraLimits>();
+	// The last preview generated for this file, carried forward by saves that don't regenerate it.
+	// See InkPreview.
+	const lastPreviewRef = useRef<InkPreview>({});
+	// True from the moment a stroke schedules a save until one is written. See the onMount teardown.
+	const savePendingRef = useRef<boolean>(false);
 	const bridgeClientRef = useRef<CompanionBridgeClient>();
 	// Where the viewport's (0,0) sits on the physical screen, in CSS px — {0,0} until a real pen
 	// event calibrates it. See "Coordinate calibration" in COMPANION_APP_RESEARCH.md.
@@ -418,6 +423,13 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		}
 		
 		return () => {
+			// An embed's save is bound to its own file, so a stroke still waiting on the short save
+			// timer is written now rather than dropped — this is what runs when the note is switched
+			// away from with the editor still open. A view's save follows whichever file it shows
+			// next, so there it's still dropped, as unmountActions has always done.
+			if (props.embedded && savePendingRef.current) {
+				incrementalSave(editor).catch((e) => warn(['Could not save on close', e]));
+			}
 			unmountActions();
 		};
 	}
@@ -557,6 +569,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	const smallDelayInputPostProcess = (editor: Editor) => {
 		resetShortPostProcessTimer();
 
+		savePendingRef.current = true;
 		shortDelayPostProcessTimeoutRef.current = setTimeout(
 			() => {
 				incrementalSave(editor);
@@ -613,15 +626,22 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		};
 	};
 
+	// Every save goes through here, so the teardown flush knows whether one is still owed.
+	const saveFileData = (pageData: InkFileData) => {
+		savePendingRef.current = false;
+		props.save(pageData);
+	}
+
 	const incrementalSave = async (editor: Editor) => {
 		verbose('incrementalSave');
 		const tlEditorSnapshot = buildMergedSnapshot(editor);
 
 		const pageData = buildWritingFileData({
 			tlEditorSnapshot: tlEditorSnapshot,
+			previewUri: lastPreviewRef.current.previewUri,
 			previewIsOutdated: true,
 		})
-		props.save(pageData);
+		saveFileData(pageData);
 	}
 
 	const completeSave = async (editor: Editor, forceSvg: boolean = false): Promise<void> => {
@@ -635,9 +655,10 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			const tlEditorSnapshot = buildMergedSnapshot(editor);
 			const pageData = buildWritingFileData({
 				tlEditorSnapshot,
+				previewUri: lastPreviewRef.current.previewUri,
 				previewIsOutdated: true,
 			});
-			props.save(pageData);
+			saveFileData(pageData);
 			return;
 		}
 
@@ -654,20 +675,22 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			previewUri = svgObj.svg;//await svgToPngDataUri(svgObj)
 			// if(previewUri) addDataURIImage(previewUri)	// NOTE: Option for testing
 		}
+		// Undefined when there's nothing left to render, which is correct to carry forward too.
+		lastPreviewRef.current = { previewUri };
 
 		if(previewUri) {
 			const pageData = buildWritingFileData({
 				tlEditorSnapshot: tlEditorSnapshot,
 				previewUri,
 			})
-			props.save(pageData);
+			saveFileData(pageData);
 			// await savePngExport(props.plugin, previewUri, props.fileRef) // REVIEW: Still need a png?
 
 		} else {
 			const pageData = buildWritingFileData({
 				tlEditorSnapshot: tlEditorSnapshot,
 			})
-			props.save(pageData);
+			saveFileData(pageData);
 		}
 
 		return;
@@ -823,6 +846,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.writingFile)
+        lastPreviewRef.current = getInkPreview(inkFileData);
         if(inkFileData.tldraw) {
             const snapshot = prepareWritingSnapshot(inkFileData.tldraw as TLEditorSnapshot);
             setTlEditorSnapshot(snapshot);

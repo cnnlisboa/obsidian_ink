@@ -171,6 +171,18 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 			});
 		});
 
+	new Setting(containerEl)
+		.setClass('inkc_setting')
+		.setName('Close editor when tapping outside')
+		.setDesc('Save and close an open writing, notebook or drawing section when you tap anywhere else in Obsidian. Pen taps right at the edge of a section, and touches from a resting hand, are ignored. Only one section can be open at a time either way.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.closeEditorOnTapOutside);
+			toggle.onChange(async (value) => {
+				plugin.settings.closeEditorOnTapOutside = value;
+				await plugin.saveSettings();
+			});
+		});
+
 	insertHeading(containerEl, 'Files');
 
 	new Setting(containerEl)
