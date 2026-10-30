@@ -185,6 +185,53 @@ body.inkc_ereader {
     .inkc_preview-page-nav {
         opacity: 1;
     }
+
+    // 48px is the smallest target that's reliably hit with a stylus on a panel with no hover to
+    // confirm where the nib is. Looks oversized next to a desktop toolbar; it isn't on device.
+    .ink_menu-bar button,
+    .ink_extended-writing-menu button,
+    .inkc_pen-palette button,
+    .ink_scroll-button,
+    .ink_add-lines-button,
+    .ink_fit-width-button {
+        width: 48px;
+        height: 48px;
+
+        svg {
+            width: 28px !important;
+            height: 28px !important;
+        }
+    }
+
+    // The tool in hand, in solid ink. The accent fill used elsewhere lands as a mid-grey on a
+    // greyscale panel, hard to tell from the buttons around it.
+    .ink_menu-bar button[aria-pressed="true"] {
+        background-color: var(--text-normal);
+        color: var(--background-primary);
+        fill: var(--background-primary);
+    }
+
+    // A shadow dithers into a smudge here; a solid edge reads cleanly.
+    .inkc_pen-palette {
+        box-shadow: none;
+        border-color: var(--text-normal);
+    }
+
+    // Lines, dots and squares darker and about half as heavy again: at their usual light grey
+    // they fall below what the panel can show and the page reads as blank.
+    .inkc_writing-editor,
+    .inkc_writing-embed-preview {
+        line {
+            stroke: var(--color-base-70, var(--text-muted));
+            stroke-width: 3px;
+        }
+        line.inkc_paper-dots {
+            stroke-width: 10px;
+        }
+        line.inkc_paper-grid {
+            stroke-width: 1.5px;
+        }
+    }
 }
 
 //////////////////////////
