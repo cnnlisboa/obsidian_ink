@@ -46,14 +46,17 @@
 
 // Customised for themes
 ////////////////////////
+//
+// A preview's SVG keeps the colours of the theme it was saved in, so black ink — tldraw's 'black',
+// exported as #1d1d1d from light mode and #f2f2f2 from dark — is redrawn in the current theme's
+// ink. Coloured pens and the highlighter keep the colour they were written in.
 
 .theme-dark {
     .inkc_writing-embed-preview {
 
-        // Pens — color filled-outline strokes (default renderer) and
-        // centerline strokes (ereader renderer, which use fill="none" + stroke)
-        path:not([fill="none"]) { fill: rgb(242, 242, 242); }
-        path[fill="none"] { stroke: rgb(242, 242, 242); }
+        // Filled-outline strokes (default renderer) and centreline strokes (e-ink renderer)
+        path[fill="#1d1d1d"], path[fill="#f2f2f2"] { fill: rgb(242, 242, 242); }
+        path[stroke="#1d1d1d"], path[stroke="#f2f2f2"] { stroke: rgb(242, 242, 242); }
 
     }
 }
@@ -61,10 +64,8 @@
 .theme-light {
     .inkc_writing-embed-preview {
 
-        // Pens
-        path:not([fill="none"]) { fill: rgb(29, 29, 29); }
-        path[fill="none"] { stroke: rgb(29, 29, 29); }
+        path[fill="#1d1d1d"], path[fill="#f2f2f2"] { fill: rgb(29, 29, 29); }
+        path[stroke="#1d1d1d"], path[stroke="#f2f2f2"] { stroke: rgb(29, 29, 29); }
 
     }
 }
-
