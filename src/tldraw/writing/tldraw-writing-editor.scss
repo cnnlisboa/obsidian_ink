@@ -55,6 +55,13 @@
         stroke: var(--color-base-50);
         stroke-width: 2px;
     }
+    // See WritingLinesUtil.createSvg: dots are zero-length dashes, so their width is their size.
+    line.inkc_paper-dots {
+        stroke-width: 7px;
+    }
+    line.inkc_paper-grid {
+        stroke-width: 1px;
+    }
 }
 
 

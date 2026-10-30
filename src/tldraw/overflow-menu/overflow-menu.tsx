@@ -18,6 +18,8 @@ export interface menuOption {
      * Left out where neither exists to act through, such as an embed shown in reading mode.
      */
     editsNote?: boolean,
+    /** Shows a check mark, for options that pick one of several. */
+    checked?: boolean,
 }
 
 /** Builds a native Obsidian menu from a list of options. */
@@ -29,6 +31,7 @@ export function buildMenu(menuOptions: menuOption[]): Menu {
             item.setTitle(menuOption.text);
             if (menuOption.icon) item.setIcon(menuOption.icon);
             if (menuOption.section) item.setSection(menuOption.section);
+            if (menuOption.checked !== undefined) item.setChecked(menuOption.checked);
             item.onClick(() => menuOption.action());
         });
     });

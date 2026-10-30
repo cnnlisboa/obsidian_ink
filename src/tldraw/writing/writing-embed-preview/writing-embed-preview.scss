@@ -32,6 +32,12 @@
         stroke: var(--color-base-50);
         stroke-width: 2px;
     }
+    line.inkc_paper-dots {
+        stroke-width: 7px;
+    }
+    line.inkc_paper-grid {
+        stroke-width: 1px;
+    }
     
     &:not(.inkc_visible-lines) {
         line { display: none; }

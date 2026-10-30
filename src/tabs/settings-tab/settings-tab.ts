@@ -8,6 +8,7 @@ import { setNewWritingLineHeight } from 'src/utils/tldraw-helpers';
 import { showWelcomeTips, showWelcomeTips_maybe } from 'src/notices/welcome-notice';
 import { ToggleAccordionSetting } from 'src/components/dom-components/toggle-accordion-setting';
 import { isEreader } from 'src/utils/isEreader';
+import { WRITING_PAPERS, WritingPaper } from 'src/tldraw/writing-shapes/writing-lines';
 
 /////////
 /////////
@@ -493,7 +494,8 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 
 	new Setting(sectionEl)
 		.setClass('inkc_setting')
-		.setName('Show ruled lines when not editing')
+		.setName('Show paper when not editing')
+		.setDesc('Keep the lines, dots or squares visible on writing you aren\'t editing.')
 
 		.addToggle((toggle) => {
 			toggle.setValue(plugin.settings.writingLinesWhenLocked);
@@ -543,6 +545,19 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
 				if(ev.key === 'Enter') saveWritingLineHeight(textItem.getValue())
 			})
+		});
+
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
+		.setName('Paper for new writing')
+		.setDesc('Lined, dotted, squared or blank. Stored in each file as it\'s created; change an existing one from its menu while editing.')
+		.addDropdown((dropdown) => {
+			for (const { value, label } of WRITING_PAPERS) dropdown.addOption(value, label);
+			dropdown.setValue(plugin.settings.writingPaper);
+			dropdown.onChange(async (value) => {
+				plugin.settings.writingPaper = value as WritingPaper;
+				await plugin.saveSettings();
+			});
 		});
 
 	insertHeading(sectionEl, 'Writing input');

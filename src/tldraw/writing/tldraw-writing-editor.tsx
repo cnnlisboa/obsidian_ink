@@ -1,7 +1,7 @@
 import './tldraw-writing-editor.scss';
 import { Box, DefaultDashStyle, DrawShapeUtil, react, Editor, HistoryEntry, StoreSnapshot, TLDrawShape, TLStoreSnapshot, TLRecord, TLShapeId, TLStore, TLUiOverrides, TLUnknownShape, Tldraw, getSnapshot, TLSerializedStore, TldrawOptions, TldrawEditor, defaultTools, SelectTool, defaultShapeTools, defaultShapeUtils, defaultBindingUtils, TldrawScribble, TldrawShapeIndicators, TldrawSelectionForeground, TldrawSelectionBackground, TldrawHandles, TLEditorSnapshot } from "@tldraw/tldraw";
 import { useRef } from "react";
-import { Activity, WritingCameraLimits, isInkShapeType, adaptTldrawToObsidianThemeMode, deleteObsoleteWritingTemplateShapes, fitWritingCameraToWidth, focusChildTldrawEditor, getActivityType, getWritingCameraYBounds, getWritingLineHeight, getWritingContainerBounds, getWritingContainerShape, getWritingSvg, hideWritingContainer, hideWritingLines, hideWritingTemplate, initWritingCamera, initWritingCameraLimits, lockShape, prepareWritingSnapshot, preventTldrawCanvasesCausingObsidianGestures, resizeWritingTemplateInvitingly, addWritingLines, removeWritingLine, restrictWritingCamera, silentlyChangeStore, unhideWritingContainer, unhideWritingLines, unhideWritingTemplate, unlockShape, updateWritingStoreIfNeeded, useStash } from "../../utils/tldraw-helpers";
+import { Activity, WritingCameraLimits, isInkShapeType, getWritingLinesShape, adaptTldrawToObsidianThemeMode, deleteObsoleteWritingTemplateShapes, fitWritingCameraToWidth, focusChildTldrawEditor, getActivityType, getWritingCameraYBounds, getWritingLineHeight, getWritingContainerBounds, getWritingContainerShape, getWritingSvg, hideWritingContainer, hideWritingLines, hideWritingTemplate, initWritingCamera, initWritingCameraLimits, lockShape, prepareWritingSnapshot, preventTldrawCanvasesCausingObsidianGestures, resizeWritingTemplateInvitingly, addWritingLines, removeWritingLine, restrictWritingCamera, silentlyChangeStore, unhideWritingContainer, unhideWritingLines, unhideWritingTemplate, unlockShape, updateWritingStoreIfNeeded, useStash } from "../../utils/tldraw-helpers";
 import { WritingContainer, WritingContainerUtil } from "../writing-shapes/writing-container"
 import { WritingMenu } from "../writing-menu/writing-menu";
 import { InkSelectTool } from "../ink-select-tool";
@@ -14,8 +14,9 @@ import { InkFileData, InkPreview, buildWritingFileData, getInkPreview } from 'sr
 import { TFile } from 'obsidian';
 import { PrimaryMenuBar } from '../primary-menu-bar/primary-menu-bar';
 import ExtendedWritingMenu from '../extended-writing-menu/extended-writing-menu';
+import { menuOption } from '../overflow-menu/overflow-menu';
 import classNames from 'classnames';
-import { WritingLines, WritingLinesUtil } from '../writing-shapes/writing-lines';
+import { WRITING_PAPERS, WritingLines, WritingLinesUtil, WritingPaper } from '../writing-shapes/writing-lines';
 import { getAssetUrlsByMetaUrl } from '@tldraw/assets/urls';
 import {getAssetUrlsByImport} from '@tldraw/assets/imports';
 import { editorActiveAtom, WritingEmbedState, embedStateAtom } from './writing-embed';
@@ -107,6 +108,8 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// event calibrates it. See "Coordinate calibration" in COMPANION_APP_RESEARCH.md.
 	const screenOriginRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
 	const [preventTransitions, setPreventTransitions] = React.useState<boolean>(true);
+	// Mirrors the file's paper so the menu can tick the current one. Set once the editor mounts.
+	const [paper, setPaperState] = React.useState<WritingPaper>('lines');
 	// Tracks the lowest page-y reached by any draw shape's points. Used to skip
 	// resizeWritingTemplateInvitingly when the existing container still has room.
 	const lastContentMaxYRef = useRef<number>(0);
@@ -174,6 +177,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		}
 
 		resizeContainerIfEmbed(tlEditorRef.current);
+		setPaperState(getWritingLinesShape(editor)?.props.paper ?? 'lines');
 
 		updateWritingStoreIfNeeded(editor);
 
@@ -726,6 +730,34 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 		return tlEditorRef.current;
 	};
 
+	// Only the page's template changes, never the ink, so this is safe on any file at any time.
+	const setPaper = (newPaper: WritingPaper) => {
+		const editor = tlEditorRef.current;
+		if (!editor) return;
+		const lines = getWritingLinesShape(editor);
+		if (!lines) return;
+		editor.run(() => {
+			editor.updateShape<WritingLines>({ id: lines.id, type: 'writing-lines', props: { paper: newPaper } });
+		}, { ignoreShapeLock: true });
+		setPaperState(newPaper);
+		// The template isn't ink, so this doesn't register as writing; it's saved explicitly.
+		queueOrRunStorePostProcesses(editor);
+	};
+
+	const paperMenuOptions = WRITING_PAPERS.map(({ value, label }) => ({
+		text: `${label} paper`,
+		section: 'inkc-paper',
+		checked: paper === value,
+		action: () => setPaper(value),
+	}));
+
+	// Paper goes ahead of anything destructive, which stays last in the menu.
+	const withPaperOptions = (options: menuOption[]): menuOption[] => {
+		const dangerIndex = options.findIndex(option => option.section === 'inkc-danger');
+		if (dangerIndex < 0) return [...options, ...paperMenuOptions];
+		return [...options.slice(0, dangerIndex), ...paperMenuOptions, ...options.slice(dangerIndex)];
+	};
+
 	const handleAddLines = (e: React.PointerEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
@@ -802,7 +834,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 							if(props.closeEditor) props.closeEditor();
 						}}
 						onOpenClick = {props.onOpenClick}
-						menuOptions = {props.extendedMenu}
+						menuOptions = {withPaperOptions(props.extendedMenu)}
 					/>
 				)}
 				{!props.embedded && props.onExitFocusMode && (

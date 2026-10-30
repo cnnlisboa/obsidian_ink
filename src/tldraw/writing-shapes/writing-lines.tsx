@@ -6,9 +6,19 @@ import { WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from
 //////////
 //////////
 
-// `lineHeight` is optional: files written before it existed simply don't carry one, and fall back
-// to the WRITING_LINE_HEIGHT constant they were ruled with.
-export type WritingLines = TLBaseShape<'writing-lines', { x: number, y: number, w: number, h: number, lineHeight?: number }>
+/** The paper a page of writing is on. Ink is never affected by changing it. */
+export type WritingPaper = 'lines' | 'dots' | 'grid' | 'blank';
+
+export const WRITING_PAPERS: { value: WritingPaper, label: string }[] = [
+	{ value: 'lines', label: 'Lined' },
+	{ value: 'dots', label: 'Dotted' },
+	{ value: 'grid', label: 'Squared' },
+	{ value: 'blank', label: 'Blank' },
+];
+
+// `lineHeight` and `paper` are optional: files written before they existed simply don't carry
+// them, and fall back to the WRITING_LINE_HEIGHT ruling they were made with.
+export type WritingLines = TLBaseShape<'writing-lines', { x: number, y: number, w: number, h: number, lineHeight?: number, paper?: WritingPaper }>
 
 export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 	static override type = 'writing-lines' as const
@@ -76,25 +86,78 @@ export class WritingLinesUtil extends ShapeUtil<WritingLines> {
 	// Custom functions
 	//////////////
 
+	// Everything is drawn with <line> elements, so the stylesheets that colour and hide ruled lines —
+	// in the editor, in previews, and the "show when not editing" settings — cover every paper.
 	createSvg(shape: WritingLines): React.JSX.Element {
 		const lineHeight = shape.props.lineHeight || WRITING_LINE_HEIGHT;
-		const numberOfLines = Math.floor(shape.props.h / lineHeight);
-		const margin = 0;
+		const { w, h } = shape.props;
+		const paper = shape.props.paper ?? 'lines';
 		this.isAspectRatioLocked(shape);
 
-		const lines = Array.from({ length: numberOfLines }, (_, index) => (
-		<line
-				key = {index}
-				x1 = {margin}
-				y1 = {(index+1) * lineHeight}
-				x2 = {shape.props.w - margin}
-				y2 = {(index+1) * lineHeight}
-				// NOTE: Styling is done through CSS
-			/>
-		));
+		if (paper === 'blank') return <></>;
 
+		if (paper === 'lines') {
+			const numberOfLines = Math.floor(h / lineHeight);
+			return <>
+				{Array.from({ length: numberOfLines }, (_, index) => (
+					<line
+						key = {index}
+						x1 = {0}
+						y1 = {(index+1) * lineHeight}
+						x2 = {w}
+						y2 = {(index+1) * lineHeight}
+						// NOTE: Styling is done through CSS
+					/>
+				))}
+			</>
+		}
+
+		// Dots and squares sit at half the ruling, so handwriting sized for the lines still fits.
+		const spacing = lineHeight / 2;
+		const rows = Math.floor(h / spacing);
+
+		if (paper === 'dots') {
+			// One dashed line per row, with dashes of zero length and round caps, draws the row's
+			// dots as a single element rather than one per dot. Rows start one step in, so there's
+			// no half-clipped dot on the page's edge.
+			return <>
+				{Array.from({ length: rows }, (_, index) => (
+					<line
+						key = {index}
+						className = "inkc_paper-dots"
+						x1 = {spacing}
+						y1 = {(index+1) * spacing}
+						x2 = {w}
+						y2 = {(index+1) * spacing}
+						strokeDasharray = {`0 ${spacing}`}
+						strokeLinecap = "round"
+					/>
+				))}
+			</>
+		}
+
+		const columns = Math.floor(w / spacing);
 		return <>
-			{lines}
+			{Array.from({ length: rows }, (_, index) => (
+				<line
+					key = {`row-${index}`}
+					className = "inkc_paper-grid"
+					x1 = {0}
+					y1 = {(index+1) * spacing}
+					x2 = {w}
+					y2 = {(index+1) * spacing}
+				/>
+			))}
+			{Array.from({ length: columns }, (_, index) => (
+				<line
+					key = {`column-${index}`}
+					className = "inkc_paper-grid"
+					x1 = {(index+1) * spacing}
+					y1 = {0}
+					x2 = {(index+1) * spacing}
+					y2 = {h}
+				/>
+			))}
 		</>
 	}
 

@@ -1,4 +1,5 @@
 import type { TLDefaultColorStyle, TLDefaultSizeStyle } from "@tldraw/tldraw";
+import type { WritingPaper } from "src/tldraw/writing-shapes/writing-lines";
 import { WRITING_LINE_HEIGHT } from "src/constants";
 ////////
 ////////
@@ -27,6 +28,8 @@ export interface PluginSettings {
 	// Ruling height for NEW writing files, in page units. Stored on each file as it's created, so
 	// changing this never re-rules existing writing out from under ink that's already there.
 	writingLineHeight: number,
+	// Paper for NEW writing files, stored on each as it's created, like the line height.
+	writingPaper: WritingPaper,
 	writingDynamicStrokeThickness: boolean,
 	writingSmoothing: boolean,
 	writingStreamline: number,
@@ -81,6 +84,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingEnabled: true,
 	writingStrokeLimit: 200,
 	writingLineHeight: WRITING_LINE_HEIGHT,
+	writingPaper: 'lines',
 	writingDynamicStrokeThickness: true,
 	writingSmoothing: false,
 	writingStreamline: 0.1,

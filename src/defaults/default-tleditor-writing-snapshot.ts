@@ -1,8 +1,21 @@
 import { SerializedStore, TLEditorSnapshot, TLPageId, TLRecord } from "@tldraw/tldraw";
 import { WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from "src/constants";
+import type { WritingLines, WritingPaper } from "src/tldraw/writing-shapes/writing-lines";
 
 /////
 /////
+
+/**
+ * A new, empty writing file, ruled as chosen in settings. The template shapes are part of the
+ * default snapshot, so this is where a new file's ruling has to be set; anything applied later
+ * would move the rules out from under ink already written.
+ */
+export function buildNewWritingSnapshot(ruling: { lineHeight: number, paper: WritingPaper }): TLEditorSnapshot {
+    const snapshot: TLEditorSnapshot = JSON.parse(JSON.stringify(defaultTLEditorWritingSnapshot));
+    const lines = snapshot.document.store['shape:writing-lines' as keyof typeof snapshot.document.store] as unknown as WritingLines;
+    lines.props = { ...lines.props, lineHeight: ruling.lineHeight, paper: ruling.paper };
+    return snapshot;
+}
 
 export const defaultTLEditorWritingSnapshot: TLEditorSnapshot = {
     "document": {
