@@ -8,7 +8,10 @@ type Metadata = {
 	pluginVersion: string;
 	tldrawVersion: string;
 	previewIsOutdated?: boolean;
+	/** The handwriting as text. See src/logic/transcription.ts. */
 	transcript?: string;
+	/** Fingerprint of the ink `transcript` was read from, so unchanged writing isn't read again. */
+	transcriptOf?: string;
 	/** Page-coordinate bounds the preview SVG covers. See src/utils/svg-framing.ts. */
 	previewBounds?: { x: number, y: number, w: number, h: number };
 };
@@ -46,6 +49,7 @@ export const buildWritingFileData = (props: {
 	tlEditorSnapshot: TLEditorSnapshot,
 	previewIsOutdated?: boolean;
 	transcript?: string;
+	transcriptOf?: string;
 	previewUri?: string,
 	pagePreviewUris?: string[],
 }): InkFileData => {
@@ -67,6 +71,7 @@ const buildFileData = (props: {
 	tlEditorSnapshot: TLEditorSnapshot,
 	previewIsOutdated?: boolean;
 	transcript?: string;
+	transcriptOf?: string;
 	previewUri?: string,
 	pagePreviewUris?: string[],
 	previewBounds?: { x: number, y: number, w: number, h: number },
@@ -78,6 +83,8 @@ const buildFileData = (props: {
 		previewIsOutdated = false,
 		pagePreviewUris,
 		previewBounds,
+		transcript,
+		transcriptOf,
 	} = props;
 
 	let pageData: InkFileData = {
@@ -90,6 +97,8 @@ const buildFileData = (props: {
 
 	if(previewIsOutdated) pageData.meta.previewIsOutdated = previewIsOutdated;
 	if(previewBounds) pageData.meta.previewBounds = previewBounds;
+	if(transcript !== undefined) pageData.meta.transcript = transcript;
+	if(transcriptOf !== undefined) pageData.meta.transcriptOf = transcriptOf;
 	if(previewUri) pageData.previewUri = previewUri;
 	if(pagePreviewUris) pageData.pagePreviewUris = pagePreviewUris;
 

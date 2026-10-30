@@ -80,3 +80,50 @@ export type BridgeMessage = SetWritingModeMessage | StrokePointsMessage | Stroke
 export function isStrokePointsMessage(msg: BridgeMessage): msg is StrokePointsMessage {
 	return msg.type === 'strokePoints';
 }
+
+////////
+//////// Transcription. Separate from the pen messages above: the plugin opens a connection just
+//////// for one request, and the companion app answers it on that connection. See InkRecognizer.kt.
+////////
+
+/** One line of handwriting, each stroke a flat [x0, y0, x1, y1, ...] array in the line's own coordinates. */
+export interface RecognitionInkLine {
+	strokes: number[][],
+	width: number,
+	height: number,
+}
+
+// plugin -> companion app
+export interface RecognizeInkMessage {
+	type: 'recognizeInk',
+	requestId: string,
+	/** BCP-47 tag naming the handwriting model, e.g. 'en-US'. */
+	language: string,
+	lines: RecognitionInkLine[],
+}
+
+// companion app -> plugin: the language's model is downloading, which happens once and can take a while.
+export interface InkRecognitionStatusMessage {
+	type: 'inkRecognitionStatus',
+	requestId: string,
+	status: 'downloadingModel',
+}
+
+// companion app -> plugin: one text per line sent, '' for a line with nothing recognisable.
+export interface InkRecognizedMessage {
+	type: 'inkRecognized',
+	requestId: string,
+	lines: string[],
+}
+
+export type InkRecognitionFailureReason = 'unsupportedLanguage' | 'modelUnavailable' | 'timeout' | 'error';
+
+// companion app -> plugin
+export interface InkRecognitionFailedMessage {
+	type: 'inkRecognitionFailed',
+	requestId: string,
+	reason: InkRecognitionFailureReason,
+	message: string,
+}
+
+export type InkRecognitionReply = InkRecognitionStatusMessage | InkRecognizedMessage | InkRecognitionFailedMessage;

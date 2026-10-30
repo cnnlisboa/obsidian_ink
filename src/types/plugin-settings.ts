@@ -43,6 +43,10 @@ export interface PluginSettings {
 	writingHighlighterColor: TLDefaultColorStyle,
 	// Scribbling back and forth over ink deletes it. See scratch-out.ts.
 	writingScratchOut: boolean,
+	// Turn handwriting into searchable text when a writing embed closes. See transcription.ts.
+	transcribeWriting: boolean,
+	// BCP-47 tag of the handwriting model the companion app reads with, e.g. 'en-US'.
+	transcriptionLanguage: string,
 	companionBridgeEnabled: boolean,
 	companionBridgePort: number,
 	fingerSwipeScroll: boolean,
@@ -96,6 +100,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingPenSize: 'm',
 	writingHighlighterColor: 'yellow',
 	writingScratchOut: true,
+	transcribeWriting: true,
+	transcriptionLanguage: 'en-US',
 	companionBridgeEnabled: false,
 	companionBridgePort: 8765,
 	fingerSwipeScroll: false,

@@ -33,6 +33,7 @@ import { drawExistingSvgStr, drawPasteSvgStr } from './graphics/icons/command-ic
 import { applyDeviceClasses } from './utils/device-classes';
 import { registerOpenEmbedDismissal } from './logic/open-embed';
 import { registerSvgSidecars } from './logic/svg-sidecar';
+import { transcribeNoteHandwriting } from './commands/transcribe-note-handwriting';
 // Imported last so its cross-cutting rules land after every component stylesheet
 // in the bundled CSS, and win ties on equal specificity.
 import './styles/plugin-polish.scss';
@@ -156,6 +157,12 @@ function implementWritingEmbedActions(plugin: InkPlugin) {
 		name: 'Copied handwriting section',
 		icon: 'write_paste',
 		editorCallback: (editor: Editor) => insertRememberedWritingFile(plugin, editor)
+	});
+	plugin.addCommand({
+		id: 'transcribe-note-handwriting',
+		name: 'Transcribe handwriting in this note',
+		icon: 'scan-text',
+		editorCallback: (editor: Editor, view) => transcribeNoteHandwriting(plugin, editor, view)
 	});
 }
 

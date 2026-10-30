@@ -43,10 +43,45 @@ wss.on('connection', (socket) => {
 			console.log(`strokeDrawn ack received, upToT=${msg.upToT}`);
 			return;
 		}
+
+		if (msg.type === 'recognizeInk') {
+			answerRecognition(socket, msg);
+			return;
+		}
 	});
 
 	socket.on('close', () => console.log('Plugin disconnected.'));
 });
+
+// Stands in for the companion app's handwriting recognition (InkRecognizer.kt). There's no real
+// reading here: each line comes back described by its stroke count, which is enough to exercise
+// the plugin's transcript plumbing. The first request in each language pretends to download its
+// model, as the real app does once.
+const downloadedLanguages = new Set();
+
+function answerRecognition(socket, msg) {
+	const reply = (body) => {
+		if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ requestId: msg.requestId, ...body }));
+	};
+	console.log(`recognizeInk: ${msg.lines.length} lines in ${msg.language}`);
+
+	if (msg.language === 'xx-XX') {
+		reply({ type: 'inkRecognitionFailed', reason: 'unsupportedLanguage', message: `There's no handwriting model for '${msg.language}'` });
+		return;
+	}
+
+	const downloading = !downloadedLanguages.has(msg.language);
+	if (downloading) {
+		downloadedLanguages.add(msg.language);
+		reply({ type: 'inkRecognitionStatus', status: 'downloadingModel' });
+	}
+	setTimeout(() => {
+		reply({
+			type: 'inkRecognized',
+			lines: msg.lines.map((line, i) => `line ${i + 1} with ${line.strokes.length} strokes`),
+		});
+	}, downloading ? 800 : 150);
+}
 
 function sendSimulatedGesture(socket, sessionId, canvasId, rect) {
 	if (socket.readyState !== socket.OPEN) return;

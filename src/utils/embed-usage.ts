@@ -8,7 +8,7 @@ import {
 	NOTEBOOK_EMBED_KEY,
 	WRITE_EMBED_KEY,
 } from "src/constants";
-import { resolveInkFileFromEmbed } from "./embed";
+import { formatEmbedJson, resolveInkFileFromEmbed } from "./embed";
 import { warn } from "./log-to-console";
 
 /////////
@@ -54,6 +54,56 @@ const EMBED_KEY_FILETYPES: Record<string, string> = {
 	[NOTEBOOK_EMBED_KEY]: 'notebook',
 	[LEGACY_NOTEBOOK_EMBED_KEY]: 'notebook',
 };
+
+/**
+ * Writes transcripts into the codeblocks of the writing embeds in `editor`'s note, for each embed
+ * whose file has an entry in `transcripts` (keyed by file path). Only the JSON inside each block is
+ * replaced, so the fences and everything around them are left as they were. Returns how many
+ * blocks changed.
+ */
+export function setWritingEmbedTranscripts(
+	plugin: InkPlugin,
+	editor: Editor,
+	notePath: string,
+	transcripts: Map<string, string>,
+): number {
+	const content = editor.getValue();
+	const blockRegex = new RegExp(
+		`^[ \\t]*\`\`\`(?:${WRITE_EMBED_KEY}|${LEGACY_WRITE_EMBED_KEY})[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]*\`\`\`[ \\t]*(?:\\r?\\n|$)`,
+		'gm',
+	);
+
+	const edits: { from: number, to: number, text: string }[] = [];
+	let match: RegExpExecArray | null;
+	while ((match = blockRegex.exec(content)) !== null) {
+		let embedData: Record<string, unknown> & { link?: string; filepath?: string; transcript?: string };
+		try {
+			embedData = JSON.parse(match[1]);
+		} catch (err) {
+			continue;	// Malformed embed — leave it alone rather than guessing at it.
+		}
+
+		const inkFile = resolveInkFileFromEmbed(plugin, embedData, notePath);
+		if (!inkFile || !transcripts.has(inkFile.path)) continue;
+		const transcript = transcripts.get(inkFile.path) ?? '';
+		if ((embedData.transcript ?? '') === transcript) continue;
+
+		if (transcript) {
+			embedData.transcript = transcript;
+		} else {
+			delete embedData.transcript;
+		}
+		// The JSON is the block's only content, and comes after its opening fence line.
+		const from = match.index + match[0].indexOf(match[1]);
+		edits.push({ from, to: from + match[1].length, text: formatEmbedJson(embedData) });
+	}
+
+	// Last first, so earlier offsets stay valid as later blocks change length.
+	for (const edit of edits.reverse()) {
+		editor.replaceRange(edit.text, editor.offsetToPos(edit.from), editor.offsetToPos(edit.to));
+	}
+	return edits.length;
+}
 
 /**
  * Finds every ink embed code block in a markdown string that points at `inkFile`.

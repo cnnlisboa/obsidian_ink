@@ -775,6 +775,41 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			})
 		});
 
+	insertHeading(sectionEl, 'Transcription');
+
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
+		.setName('Transcribe handwriting')
+		.setDesc('When you close a handwriting section, the companion app reads it on the device and the text is stored with it, so Obsidian\'s search finds your handwriting. Needs the companion bridge. Run "Transcribe handwriting in this note" for writing done before this was on.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.transcribeWriting);
+			toggle.onChange(async (value: boolean) => {
+				plugin.settings.transcribeWriting = value;
+				await plugin.saveSettings();
+				refresh();
+			});
+		});
+
+	if (plugin.settings.transcribeWriting) {
+		const languageSetting = new Setting(sectionEl)
+			.setClass('inkc_setting')
+			.setName('Transcription language')
+			.setDesc('The language you write in, as a language tag such as en-US, en-GB, pt-BR or de-DE. Its handwriting model downloads once, on first use.')
+			.addText((textItem) => {
+				textItem.setValue(plugin.settings.transcriptionLanguage);
+				textItem.setPlaceholder(DEFAULT_SETTINGS.transcriptionLanguage);
+				const saveLanguage = async () => {
+					plugin.settings.transcriptionLanguage = textItem.getValue().trim() || DEFAULT_SETTINGS.transcriptionLanguage;
+					await plugin.saveSettings();
+				};
+				textItem.inputEl.addEventListener('blur', saveLanguage);
+				textItem.inputEl.addEventListener('keypress', (ev: KeyboardEvent) => {
+					if (ev.key === 'Enter') saveLanguage();
+				});
+			});
+		languageSetting.settingEl.classList.add('inkc_input-medium');
+	}
+
 	insertWritingLimitations(sectionEl);
 }
 

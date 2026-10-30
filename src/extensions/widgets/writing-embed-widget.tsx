@@ -3,7 +3,7 @@ import { MarkdownRenderChild, MarkdownView, TFile } from "obsidian";
 import * as React from "react";
 import { Root, createRoot } from "react-dom/client";
 import { InkFileData, stringifyPageData } from "src/utils/page-file";
-import { WritingEmbedData as WritingEmbedData, applyCommonAncestorStyling, removeEmbed, resolveInkFileFromEmbed, updateWritingEmbedData } from "src/utils/embed";
+import { WritingEmbedData as WritingEmbedData, applyCommonAncestorStyling, insertTextAfterEmbed, removeEmbed, resolveInkFileFromEmbed, updateWritingEmbedData } from "src/utils/embed";
 import InkPlugin from "src/main";
 import WritingEmbed from "src/tldraw/writing/writing-embed";
 import { WRITE_EMBED_KEY } from "src/constants";
@@ -18,6 +18,7 @@ import {
 interface EmbedCtrls {
 	removeEmbed: Function,
 	updateEmbedData: (embedData: WritingEmbedData) => void,
+	insertTextAfter: (text: string) => void,
 }
 
 ////////
@@ -30,6 +31,7 @@ export function registerWritingEmbed(plugin: InkPlugin) {
 			const embedCtrls: EmbedCtrls = {
 				removeEmbed: () => removeEmbed(plugin, ctx, el),
 				updateEmbedData: (data: WritingEmbedData) => updateWritingEmbedData(plugin, ctx, el, data),
+				insertTextAfter: (text: string) => insertTextAfterEmbed(plugin, ctx, el, text),
 			}
 			if(embedData.link || embedData.filepath) {
 				ctx.addChild(new WritingEmbedWidget(el, plugin, embedData, embedCtrls, ctx.sourcePath));
@@ -99,6 +101,14 @@ class WritingEmbedWidget extends MarkdownRenderChild {
 						// No manual re-render: updateEmbedData rewrites the codeblock, and CodeMirror
 						// rebuilds the widget from that - same path the collapsed toggle relies on.
 					}}
+					onTranscriptChange = {(transcript: string) => {
+						// Kept in the codeblock so Obsidian's search finds the handwriting in this note.
+						const updatedData: WritingEmbedData = { ...this.embedData, transcript };
+						if (!transcript) delete updatedData.transcript;
+						this.embedData = updatedData;
+						this.embedCtrls.updateEmbedData(updatedData);
+					}}
+					onInsertText = {(text: string) => this.embedCtrls.insertTextAfter(text)}
 					onShowTitleChange = {(showTitle: boolean) => {
 						const updatedData: WritingEmbedData = { ...this.embedData, showTitle };
 						// Off is the default, so it's dropped from the codeblock rather than stored.

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { TldrawWritingEditorWrapper } from "./tldraw-writing-editor";
 import InkPlugin from "../../main";
 import { InkFileData } from "../../utils/page-file";
-import { TFile } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { duplicateWritingFile, rememberDrawingFile, rememberWritingFile } from "src/utils/rememberDrawingFile";
 import { isEmptyWritingFile } from "src/utils/tldraw-helpers";
 import { useSelector } from "react-redux";
@@ -17,7 +17,7 @@ import { nanoid } from "nanoid";
 import classNames from "classnames";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { getInkFileData } from "src/utils/getInkFileData";
-import { verbose } from "src/utils/log-to-console";
+import { verbose, warn } from "src/utils/log-to-console";
 import { CollapseIcon } from "src/graphics/icons/collapse-icon";
 import { ExpandIcon } from "src/graphics/icons/expand-icon";
 import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
@@ -26,6 +26,7 @@ import { EmbedHeightModal } from "src/modals/embed-height-modal/embed-height-mod
 import { copyEmbedToClipboard } from "src/utils/embed-clipboard";
 import { WRITE_EMBED_KEY } from "src/constants";
 import { useEmbedEditor } from "../use-embed-editor";
+import { canTranscribe, describeTranscriptionError, getSearchableTranscript, readTranscript, transcribeWritingFile } from "src/logic/transcription";
 
 ///////
 ///////
@@ -65,6 +66,8 @@ export function WritingEmbed (props: {
 	onDisplayChange?: (display: { maxHeight: number | undefined, scale: number | undefined }) => void,
 	onTitleChange?: (title: string) => void,
 	onShowTitleChange?: (showTitle: boolean) => void,
+	onTranscriptChange?: (transcript: string) => void,
+	onInsertText?: (text: string) => void,
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
@@ -84,7 +87,16 @@ export function WritingEmbed (props: {
 			verbose('Set WritingEmbedState: loadingPreview');
 			setEmbedState(WritingEmbedState.loadingPreview);
 		},
+		onClosed: () => {
+			if (props.plugin.settings.transcribeWriting || transcriptPendingRef.current) {
+				updateTranscript({ notify: false });
+			}
+		},
 	});
+	// Set when a transcript arrived while the editor was open, so the codeblock catches up once it
+	// closes. See updateTranscript.
+	const transcriptPendingRef = useRef(false);
+	const transcript = props.embedData?.transcript;
 	const [collapsed, setCollapsed] = useState(props.embedData?.collapsed ?? false);
 	const [title, setTitle] = useState(props.writingFileRef.basename);
 	const showTitle = props.embedData?.showTitle ?? false;
@@ -154,6 +166,32 @@ export function WritingEmbed (props: {
 			editsNote: true,
 			action: () => props.onShowTitleChange?.(!showTitle),
 		},
+		...(canTranscribe(props.plugin) ? [{
+			text: 'Transcribe handwriting',
+			icon: 'scan-text',
+			section: 'inkc-text',
+			editsNote: true,
+			action: () => updateTranscript({ force: true, notify: true }),
+		}] : []),
+		...(transcript ? [
+			// The codeblock's copy is flattened for search; these use the file's, with its line breaks.
+			{
+				text: 'Copy transcription',
+				icon: 'clipboard-type',
+				section: 'inkc-text',
+				action: async () => {
+					await navigator.clipboard.writeText(await readTranscript(props.plugin, props.writingFileRef) ?? transcript);
+					new Notice('Ink: transcription copied');
+				},
+			},
+			{
+				text: 'Insert transcription below',
+				icon: 'text-cursor-input',
+				section: 'inkc-text',
+				editsNote: true,
+				action: async () => props.onInsertText?.(await readTranscript(props.plugin, props.writingFileRef) ?? transcript),
+			},
+		] : []),
 		{
 			text: 'Remove embed',
 			icon: 'trash-2',
@@ -297,6 +335,43 @@ export function WritingEmbed (props: {
 	// Helper functions
 	///////////////////
 
+	/**
+	 * Brings the transcript up to date: the companion app reads the handwriting if it has changed
+	 * (or `force` is set), and the result goes into this embed's codeblock for search to find.
+	 */
+	async function updateTranscript(options: { force?: boolean, notify: boolean }) {
+		if (!canTranscribe(props.plugin)) {
+			if (options.notify) new Notice("Ink: transcription is done by the companion app. Turn on the companion bridge in Ink's settings and run the app.");
+			return;
+		}
+		const progress = options.notify ? new Notice('Ink: transcribing…', 0) : undefined;
+		try {
+			const text = await transcribeWritingFile(props.plugin, props.writingFileRef, {
+				force: options.force,
+				onDownloadingModel: () => new Notice('Ink: downloading the handwriting model. This happens once and can take a minute.'),
+			});
+			// Rewriting the codeblock rebuilds the embed, which would close an editor opened since.
+			if (embedEditor.isOpen()) {
+				transcriptPendingRef.current = true;
+			} else {
+				transcriptPendingRef.current = false;
+				const searchable = getSearchableTranscript(text);
+				if ((props.embedData?.transcript ?? '') !== searchable) props.onTranscriptChange?.(searchable);
+			}
+			progress?.hide();
+			if (options.notify) {
+				new Notice(text ? `Ink: transcribed “${truncate(text, 80)}”` : 'Ink: there was no handwriting to transcribe.');
+			}
+		} catch (e) {
+			progress?.hide();
+			if (options.notify) {
+				new Notice(`Ink: couldn't transcribe. ${describeTranscriptionError(e)}`);
+			} else {
+				warn(['Transcription failed', describeTranscriptionError(e)]);
+			}
+		}
+	}
+
 	function resizeContainer(height: number) {
 		if(!resizeContainerElRef.current) return;
 		// A capped embed stops growing at its limit and scrolls instead - in preview the container
@@ -312,5 +387,10 @@ export function WritingEmbed (props: {
 	}
 
 };
+
+function truncate(text: string, length: number): string {
+	const oneLine = text.replace(/\s+/g, ' ');
+	return oneLine.length > length ? oneLine.slice(0, length - 1) + '…' : oneLine;
+}
 
 export default WritingEmbed;

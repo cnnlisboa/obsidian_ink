@@ -103,6 +103,8 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	const lastPreviewRef = useRef<InkPreview>({});
 	// True from the moment a stroke schedules a save until one is written. See the onMount teardown.
 	const savePendingRef = useRef<boolean>(false);
+	// The file's transcript, which the editor doesn't produce but mustn't drop when it saves.
+	const transcriptRef = useRef<{ transcript?: string, transcriptOf?: string }>({});
 	const bridgeClientRef = useRef<CompanionBridgeClient>();
 	// Where the viewport's (0,0) sits on the physical screen, in CSS px — {0,0} until a real pen
 	// event calibrates it. See "Coordinate calibration" in COMPANION_APP_RESEARCH.md.
@@ -659,6 +661,9 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 	// Every save goes through here, so the teardown flush knows whether one is still owed.
 	const saveFileData = (pageData: InkFileData) => {
 		savePendingRef.current = false;
+		const { transcript, transcriptOf } = transcriptRef.current;
+		if (transcript !== undefined) pageData.meta.transcript = transcript;
+		if (transcriptOf !== undefined) pageData.meta.transcriptOf = transcriptOf;
 		props.save(pageData);
 	}
 
@@ -908,6 +913,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
     async function fetchFileData() {
         const inkFileData = await getInkFileData(props.plugin, props.writingFile)
         lastPreviewRef.current = getInkPreview(inkFileData);
+        transcriptRef.current = { transcript: inkFileData.meta?.transcript, transcriptOf: inkFileData.meta?.transcriptOf };
         if(inkFileData.tldraw) {
             const snapshot = prepareWritingSnapshot(inkFileData.tldraw as TLEditorSnapshot);
             setTlEditorSnapshot(snapshot);

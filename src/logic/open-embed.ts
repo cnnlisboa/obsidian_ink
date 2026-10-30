@@ -12,7 +12,7 @@ export interface OpenEmbed {
 	/** The embed's outermost element. Taps inside it never close it. */
 	containerEl: HTMLElement,
 	/** Saves and returns the embed to its preview. Safe to call more than once. */
-	close: () => void,
+	close: () => void | Promise<void>,
 }
 
 let openEmbed: OpenEmbed | null = null;
@@ -26,6 +26,11 @@ export function claimOpenEmbed(embed: OpenEmbed) {
 
 export function releaseOpenEmbed(embed: OpenEmbed) {
 	if (openEmbed === embed) openEmbed = null;
+}
+
+/** Saves and closes whichever embed is open, if any. */
+export async function closeOpenEmbed(): Promise<void> {
+	await openEmbed?.close();
 }
 
 //////////

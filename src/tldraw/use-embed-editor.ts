@@ -25,6 +25,8 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 	showEditor: () => void,
 	/** Switches the embed to its loading-preview state, once the editor has saved. */
 	showPreview: () => void,
+	/** Called once the editor has saved and closed. Not called if saving failed. */
+	onClosed?: () => void,
 }) {
 	// Everything below is reached through refs, because the close handle registered with
 	// claimOpenEmbed is called long after the render that created it.
@@ -41,7 +43,7 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 		const containerEl = propsRef.current.containerElRef.current;
 		if (!containerEl) return;
 		if (handleRef.current?.containerEl !== containerEl) {
-			handleRef.current = { containerEl, close: () => { void close(); } };
+			handleRef.current = { containerEl, close };
 		}
 		return handleRef.current;
 	}
@@ -77,8 +79,10 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 
 		closingRef.current = true;
 		if (handleRef.current) releaseOpenEmbed(handleRef.current);
+		let saved = false;
 		try {
 			await controls.saveAndHalt();
+			saved = true;
 		} finally {
 			// Cleared so a later close can't call into this editor once it has unmounted.
 			controlsRef.current = undefined;
@@ -86,6 +90,7 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 			isOpenRef.current = false;
 			propsRef.current.showPreview();
 		}
+		if (saved) propsRef.current.onClosed?.();
 	}
 
 	function registerEditorControls(controls: C) {
@@ -120,5 +125,8 @@ export function useEmbedEditor<C extends EditorControls>(props: {
 		};
 	}, []);
 
-	return { open, close, registerEditorControls };
+	/** True from the moment the editor is asked to open until it has saved and closed. */
+	const isOpen = () => isOpenRef.current;
+
+	return { open, close, isOpen, registerEditorControls };
 }

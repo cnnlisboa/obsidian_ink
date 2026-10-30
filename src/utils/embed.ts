@@ -10,6 +10,10 @@ export type WritingEmbedData = {
 	versionAtEmbed: string;
 	link?: string;
 	filepath?: string; // legacy — kept for backward compat with old embeds
+	/**
+	 * The handwriting as text, kept in the codeblock so Obsidian's search finds it in this note.
+	 * On one line; the writing file holds it with its line breaks. See src/logic/transcription.ts.
+	 */
 	transcript?: string;
 	collapsed?: boolean;
 	title?: string;
@@ -170,7 +174,7 @@ export async function updateInkEmbedLinksInVault(plugin: InkPlugin, newPath: str
 }
 
 /** Produces a compact single-line JSON string with spaces after : and , for readability. */
-function formatEmbedJson(obj: Record<string, unknown>): string {
+export function formatEmbedJson(obj: Record<string, unknown>): string {
 	const pairs = Object.entries(obj)
 		.filter(([, v]) => v !== undefined)
 		.map(([k, v]) => `"${k}": ${JSON.stringify(v)}`);
@@ -209,6 +213,24 @@ export function updateWritingEmbedData(plugin: InkPlugin, ctx: MarkdownPostProce
 	}
 
 	cmEditor.replaceRange(formatEmbedJson(embedData as Record<string, unknown>) + '\n', editorStart, editorEnd);
+}
+
+/**
+ * Inserts `text` as its own paragraph straight after the embed's code block.
+ */
+export function insertTextAfterEmbed(plugin: InkPlugin, ctx: MarkdownPostProcessorContext, el: HTMLElement, text: string) {
+	const cmEditor = getEditorForEmbedSource(plugin, ctx);
+	if(!cmEditor) return;
+
+	const sectionInfo = ctx.getSectionInfo(el);
+	if(sectionInfo?.lineEnd === undefined) return;
+
+	// After the closing fence, separated by a blank line so it reads as a paragraph of its own.
+	const fenceEnd: EditorPosition = {
+		line: sectionInfo.lineEnd,
+		ch: cmEditor.getLine(sectionInfo.lineEnd).length,
+	}
+	cmEditor.replaceRange('\n\n' + text, fenceEnd);
 }
 
 /**
