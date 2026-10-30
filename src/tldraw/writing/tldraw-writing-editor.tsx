@@ -1,14 +1,15 @@
 import './tldraw-writing-editor.scss';
-import { Box, DefaultDashStyle, DrawShapeUtil, Editor, HistoryEntry, StoreSnapshot, TLDrawShape, TLStoreSnapshot, TLRecord, TLShapeId, TLStore, TLUiOverrides, TLUnknownShape, Tldraw, getSnapshot, TLSerializedStore, TldrawOptions, TldrawEditor, defaultTools, SelectTool, defaultShapeTools, defaultShapeUtils, defaultBindingUtils, TldrawScribble, TldrawShapeIndicators, TldrawSelectionForeground, TldrawSelectionBackground, TldrawHandles, TLEditorSnapshot } from "@tldraw/tldraw";
+import { Box, DefaultDashStyle, DrawShapeUtil, react, Editor, HistoryEntry, StoreSnapshot, TLDrawShape, TLStoreSnapshot, TLRecord, TLShapeId, TLStore, TLUiOverrides, TLUnknownShape, Tldraw, getSnapshot, TLSerializedStore, TldrawOptions, TldrawEditor, defaultTools, SelectTool, defaultShapeTools, defaultShapeUtils, defaultBindingUtils, TldrawScribble, TldrawShapeIndicators, TldrawSelectionForeground, TldrawSelectionBackground, TldrawHandles, TLEditorSnapshot } from "@tldraw/tldraw";
 import { useRef } from "react";
 import { Activity, WritingCameraLimits, isInkShapeType, adaptTldrawToObsidianThemeMode, deleteObsoleteWritingTemplateShapes, fitWritingCameraToWidth, focusChildTldrawEditor, getActivityType, getWritingCameraYBounds, getWritingLineHeight, getWritingContainerBounds, getWritingContainerShape, getWritingSvg, hideWritingContainer, hideWritingLines, hideWritingTemplate, initWritingCamera, initWritingCameraLimits, lockShape, prepareWritingSnapshot, preventTldrawCanvasesCausingObsidianGestures, resizeWritingTemplateInvitingly, addWritingLines, removeWritingLine, restrictWritingCamera, silentlyChangeStore, unhideWritingContainer, unhideWritingLines, unhideWritingTemplate, unlockShape, updateWritingStoreIfNeeded, useStash } from "../../utils/tldraw-helpers";
 import { WritingContainer, WritingContainerUtil } from "../writing-shapes/writing-container"
 import { WritingMenu } from "../writing-menu/writing-menu";
 import { InkSelectTool } from "../ink-select-tool";
 import { eraseScratchOuts } from "../scratch-out";
+import { InsertSpaceTool } from "../insert-space-tool";
 import InkPlugin from "../../main";
 import * as React from "react";
-import { MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from 'src/constants';
+import { INSERT_SPACE_TOOL_ID, MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from 'src/constants';
 import { InkFileData, InkPreview, buildWritingFileData, getInkPreview } from 'src/utils/page-file';
 import { TFile } from 'obsidian';
 import { PrimaryMenuBar } from '../primary-menu-bar/primary-menu-bar';
@@ -74,7 +75,7 @@ const tlOptions: Partial<TldrawOptions> = {
 // `tools` changes identity, which used to happen on every re-render here — throwing away undo
 // history and re-running onMount each time, e.g. whenever the finger-writing toggle was pressed.
 // The select tool is swapped for one that lassos instead of drawing a rectangle. See InkSelectTool.
-const tlTools = [...defaultTools.filter(tool => tool !== SelectTool), InkSelectTool, ...defaultShapeTools];
+const tlTools = [...defaultTools.filter(tool => tool !== SelectTool), InkSelectTool, InsertSpaceTool, ...defaultShapeTools];
 
 function getShapeUtils(useEreaderRenderer: boolean) {
 	const baseUtils = useEreaderRenderer
@@ -390,10 +391,30 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 			popupObserver.observe(document.body, { childList: true });
 		}
 
+		// Inserting space has to move every stroke, including the old ones stashed to keep writing
+		// fast, so they're put back on the page while that tool is out and stashed again after.
+		let wasInsertingSpace = false;
+		const stopInsertSpaceWatch = react('unstash while inserting space', () => {
+			const insertingSpace = editor.getCurrentToolId() === INSERT_SPACE_TOOL_ID;
+			if (insertingSpace === wasInsertingSpace) return;
+			wasInsertingSpace = insertingSpace;
+			// tldraw forbids store changes from inside a reaction (it crashes the editor), so this runs
+			// straight after it instead — still before the next pointer event can reach the tool.
+			queueMicrotask(() => {
+				if (editor.isDisposed) return;
+				if (insertingSpace) {
+					unstashStaleContent(editor);
+				} else {
+					stashStaleContent(editor);
+				}
+			});
+		});
+
 		const unmountActions = () => {
 			// NOTE: This prevents the postProcessTimer completing when a new file is open and saving over that file.
 			resetInputPostProcessTimers();
 			removeUserActionListener();
+			stopInsertSpaceWatch();
 			if (tlCanvas) {
 				tlCanvas.removeEventListener('keydown', handleKeyDown);
 				for (const name of bridgePointerEventNames) {
@@ -772,6 +793,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 					stylusOnly = {stylusOnly}
 					onToggleStylusOnly = {toggleStylusOnly}
 					onChromeChange = {sendBridgeUpdate}
+					showInsertSpace
 				/>
 				{props.embedded && props.extendedMenu && (
 					<ExtendedWritingMenu

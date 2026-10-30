@@ -46,6 +46,10 @@ export const DRAW_LONG_DELAY_MS = 2000;
 export const DRAW_LONG_DELAY_MS_EREADER = 4000;
 export const DRAW_STROKE_LIMIT = 200;
 
+// The writing editor's insert-space tool. Here rather than with the tool so the stash, which has
+// to stand down while it's in use, can check for it without an import cycle.
+export const INSERT_SPACE_TOOL_ID = 'insert-space';
+
 export const WRITING_PAGE_WIDTH = 2000;
 export const WRITING_LINE_HEIGHT = 150;
 export const WRITING_MIN_PAGE_HEIGHT = WRITING_LINE_HEIGHT * 1.5;

@@ -1,5 +1,5 @@
 import { Editor, HistoryEntry, TLStoreSnapshot, TLRecord, TLShape, TLShapeId, TLUnknownShape, setUserPreferences, Box, TLEditorSnapshot } from "@tldraw/tldraw";
-import { MENUBAR_HEIGHT_PX, WRITE_STROKE_LIMIT, WRITE_STROKE_LIMIT_EREADER, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from "src/constants";
+import { INSERT_SPACE_TOOL_ID, MENUBAR_HEIGHT_PX, WRITE_STROKE_LIMIT, WRITE_STROKE_LIMIT_EREADER, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from "src/constants";
 import { useRef } from 'react';
 import InkPlugin from "src/main";
 import { WritingContainer } from "src/tldraw/writing-shapes/writing-container";
@@ -538,6 +538,9 @@ export const useStash = (plugin: InkPlugin) => {
 	const stash = useRef<TLShape[]>([]);
 
 	const stashStaleContent = (editor: Editor) => {
+		// Inserting space moves everything below a point, so every stroke has to be on the page
+		// while that tool is out. The writing editor unstashes when it's picked up.
+		if (editor.getCurrentToolId() === INSERT_SPACE_TOOL_ID) return;
 		const completeShapes = getCompleteShapes(editor);
 
 		// On e-readers, cap the live-shape limit lower so fewer <path> elements have to repaint.

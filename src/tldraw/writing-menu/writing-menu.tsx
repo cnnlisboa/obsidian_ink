@@ -6,6 +6,8 @@ import { LassoIcon } from "src/graphics/icons/lasso-icon";
 import { DeleteIcon } from "src/graphics/icons/delete-icon";
 import { TouchIcon } from "src/graphics/icons/touch-icon";
 import { HighlighterIcon } from "src/graphics/icons/highlighter-icon";
+import { InsertSpaceIcon } from "src/graphics/icons/insert-space-icon";
+import { INSERT_SPACE_TOOL_ID } from "src/constants";
 import { DefaultColorStyle, DefaultSizeStyle, Editor, TLDefaultColorStyle, TLDefaultSizeStyle, getDefaultColorTheme, useValue } from "@tldraw/tldraw";
 import classNames from "classnames";
 import InkPlugin from "src/main";
@@ -29,6 +31,8 @@ interface WritingMenuProps {
     onToggleStylusOnly: () => void,
     /** Called when the menu's own footprint changes, e.g. a palette opening over the canvas. */
     onChromeChange?: () => void,
+    /** Offers the insert-space tool, which only the writing editor registers. */
+    showInsertSpace?: boolean,
 }
 
 export const WritingMenu = (props: WritingMenuProps) => {
@@ -169,6 +173,15 @@ export const WritingMenu = (props: WritingMenuProps) => {
                 >
                     <EraseIcon/>
                 </ToolButton>
+                {props.showInsertSpace && (
+                    <ToolButton
+                        label = "Insert space — drag down to open, up to close"
+                        pressed = {curToolId === INSERT_SPACE_TOOL_ID}
+                        onPress = {() => activateTool(INSERT_SPACE_TOOL_ID)}
+                    >
+                        <InsertSpaceIcon/>
+                    </ToolButton>
+                )}
                 {hasSelection && (
                     <ToolButton
                         label = "Delete selection"
