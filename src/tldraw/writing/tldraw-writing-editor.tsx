@@ -30,6 +30,7 @@ import { BridgeRect, BridgeStyle } from 'src/types/bridge-protocol';
 import { SecondaryMenuBar } from '../secondary-menu-bar/secondary-menu-bar';
 import ModifyMenu from '../modify-menu/modify-menu';
 import { ScrollButtons } from '../scroll-buttons/scroll-buttons';
+import { FocusModeButton, FocusModeControls } from '../focus-mode-button/focus-mode-button';
 
 ///////
 ///////
@@ -54,7 +55,7 @@ interface TldrawWritingEditorProps {
 	saveControlsReference?: Function,
 
 	// For fullscreen focus mode
-	onExitFocusMode?: () => void,
+	focusMode?: FocusModeControls,
 }
 
 // Wraps the component so that it can full unmount when inactive
@@ -842,22 +843,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 						menuOptions = {withPaperOptions(props.extendedMenu)}
 					/>
 				)}
-				{!props.embedded && props.onExitFocusMode && (
-					<button
-						className="ink_exit-focus-mode-button"
-						onPointerDown={(e) => {
-							e.preventDefault();
-							e.stopPropagation();
-							props.onExitFocusMode!();
-						}}
-						aria-label="Exit focus mode"
-					>
-						{/* Fullscreen exit — Material Symbols Rounded */}
-						<svg xmlns="http://www.w3.org/2000/svg" height={24} viewBox="0 -960 960 960" width={24}>
-							<path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z" />
-						</svg>
-					</button>
-				)}
+				{!props.embedded && props.focusMode && <FocusModeButton {...props.focusMode} />}
 			</PrimaryMenuBar>
 
 			<SecondaryMenuBar>

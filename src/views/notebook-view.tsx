@@ -26,6 +26,9 @@ export class NotebookView extends TextFileView {
     plugin: InkPlugin;
     pageData: InkFileData;
     focusModeActive: boolean = false;
+    // Whether focus mode should be on, as the user last left it. Outlives the re-render that a
+    // change to the file on disk causes, which clears (and so exits) focus mode.
+    focusModeWanted: boolean = true;
     tldrawControls: {
         resize?: Function,
     } = {}
@@ -52,9 +55,10 @@ export class NotebookView extends TextFileView {
         const viewContent = this.containerEl.children[1];
         viewContent.setAttr('style', 'padding: 0;');
 
-        this.enableFocusMode();
-
         if(this.root) this.clear();
+        // Applied after clearing, which turns it off. The other way round, any change to the file on
+        // disk (a sync from another device) dropped out of focus mode and took its button with it.
+        if(this.focusModeWanted) this.enableFocusMode();
 
         this.root = createRoot(viewContent);
 		this.root.render(
@@ -65,7 +69,7 @@ export class NotebookView extends TextFileView {
                 saveControlsReference = {(controls: any) => {
                     this.tldrawControls.resize = controls.resize;
                 }}
-                onExitFocusMode = {this.focusModeActive ? () => this.disableFocusMode() : undefined}
+                focusMode = {this.plugin.settings.fullscreenFocusMode ? { initiallyOn: this.focusModeActive, onToggle: this.setFocusMode } : undefined}
 			/>
         );
     }
@@ -86,6 +90,12 @@ export class NotebookView extends TextFileView {
 
     onunload(): void {
         this.disableFocusMode();
+    }
+
+    setFocusMode = (on: boolean) => {
+        this.focusModeWanted = on;
+        if(on) this.enableFocusMode();
+        else this.disableFocusMode();
     }
 
     enableFocusMode(): void {
