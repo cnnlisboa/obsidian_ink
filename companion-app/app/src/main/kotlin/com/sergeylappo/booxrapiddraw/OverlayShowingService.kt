@@ -51,6 +51,9 @@ class OverlayShowingService : Service(), BridgeServerListener {
     private var bridgeServer: BridgeServer? = null
     private var writingMode: WritingModeState? = null
 
+    // Answers the plugin's transcription requests. Independent of the pen and the overlay.
+    private val inkRecognizer = InkRecognizer()
+
     override fun onBind(intent: Intent) = null
 
     override fun onCreate() {
@@ -203,6 +206,7 @@ class OverlayShowingService : Service(), BridgeServerListener {
         touchHelper.closeRawDrawing()
         bridgeServer?.stop()
         bridgeServer = null
+        inkRecognizer.close()
     }
 
     ////////
@@ -216,6 +220,16 @@ class OverlayShowingService : Service(), BridgeServerListener {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(this, "Rapid Draw bridge: $message", Toast.LENGTH_LONG).show()
         }
+    }
+
+    override fun onRecognizeInk(
+        language: String,
+        lines: List<InkLine>,
+        onDownloadingModel: () -> Unit,
+        onResult: (List<String>) -> Unit,
+        onError: (InkRecognitionException) -> Unit,
+    ) {
+        inkRecognizer.recognize(language, lines, onDownloadingModel, onResult, onError)
     }
 
     override fun onWritingModeChanged(state: WritingModeState) {

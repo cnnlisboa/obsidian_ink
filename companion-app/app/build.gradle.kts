@@ -117,4 +117,8 @@ dependencies {
     // Obsidian-plugin companion bridge — embedded loopback WebSocket server.
     // See /COMPANION_APP_RESEARCH.md in the parent repo.
     implementation("org.java-websocket:Java-WebSocket:1.5.6")
+
+    // Handwriting recognition for the plugin's transcripts: on-device and offline once its
+    // language model has downloaded. See InkRecognizer.kt.
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
 }

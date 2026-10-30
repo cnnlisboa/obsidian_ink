@@ -43,6 +43,18 @@ data class WritingModeState(
 interface BridgeServerListener {
     fun onWritingModeChanged(state: WritingModeState)
 
+    /**
+     * A request to turn handwriting into text, for the plugin's transcripts. Unrelated to the pen
+     * and the overlay. Exactly one of the callbacks after the first is called, from any thread.
+     */
+    fun onRecognizeInk(
+        language: String,
+        lines: List<InkLine>,
+        onDownloadingModel: () -> Unit,
+        onResult: (List<String>) -> Unit,
+        onError: (InkRecognitionException) -> Unit,
+    )
+
     /** Server-level failure — most importantly a port already held by another install. */
     fun onBridgeServerError(message: String)
 }
@@ -69,28 +81,83 @@ class BridgeServer(port: Int, private val listener: BridgeServerListener) :
     override fun onMessage(conn: WebSocket, message: String) {
         try {
             val json = JSONObject(message)
-            if (json.optString("type") != "setWritingMode") return
-
-            val rect = json.getJSONObject("rect")
-            val origin = json.optJSONObject("screenOrigin")
-            listener.onWritingModeChanged(
-                WritingModeState(
-                    sessionId = json.getString("sessionId"),
-                    canvasId = json.getString("canvasId"),
-                    active = json.getBoolean("active"),
-                    rectLeft = rect.getDouble("left"),
-                    rectTop = rect.getDouble("top"),
-                    rectWidth = rect.getDouble("width"),
-                    rectHeight = rect.getDouble("height"),
-                    screenOriginX = origin?.optDouble("x", 0.0) ?: 0.0,
-                    screenOriginY = origin?.optDouble("y", 0.0) ?: 0.0,
-                    devicePixelRatio = json.optDouble("devicePixelRatio", 0.0),
-                    excludeRects = parseRects(json.optJSONArray("excludeRects")),
-                )
-            )
+            when (json.optString("type")) {
+                "setWritingMode" -> handleSetWritingMode(json)
+                "recognizeInk" -> handleRecognizeInk(conn, json)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse bridge message: $message", e)
         }
+    }
+
+    private fun handleSetWritingMode(json: JSONObject) {
+        val rect = json.getJSONObject("rect")
+        val origin = json.optJSONObject("screenOrigin")
+        listener.onWritingModeChanged(
+            WritingModeState(
+                sessionId = json.getString("sessionId"),
+                canvasId = json.getString("canvasId"),
+                active = json.getBoolean("active"),
+                rectLeft = rect.getDouble("left"),
+                rectTop = rect.getDouble("top"),
+                rectWidth = rect.getDouble("width"),
+                rectHeight = rect.getDouble("height"),
+                screenOriginX = origin?.optDouble("x", 0.0) ?: 0.0,
+                screenOriginY = origin?.optDouble("y", 0.0) ?: 0.0,
+                devicePixelRatio = json.optDouble("devicePixelRatio", 0.0),
+                excludeRects = parseRects(json.optJSONArray("excludeRects")),
+            )
+        )
+    }
+
+    // Mirrors RecognizeInkMessage and its replies in src/types/bridge-protocol.ts. Answered on the
+    // connection that asked, which the plugin opens just for the request.
+    private fun handleRecognizeInk(conn: WebSocket, json: JSONObject) {
+        val requestId = json.getString("requestId")
+        fun reply(type: String, fill: JSONObject.() -> Unit) {
+            if (!conn.isOpen) return
+            conn.send(
+                JSONObject().apply {
+                    put("type", type)
+                    put("requestId", requestId)
+                    fill()
+                }.toString()
+            )
+        }
+
+        listener.onRecognizeInk(
+            language = json.optString("language", "en-US"),
+            lines = parseInkLines(json.getJSONArray("lines")),
+            onDownloadingModel = { reply("inkRecognitionStatus") { put("status", "downloadingModel") } },
+            onResult = { texts -> reply("inkRecognized") { put("lines", JSONArray(texts)) } },
+            onError = { e ->
+                reply("inkRecognitionFailed") {
+                    put("reason", e.reason)
+                    put("message", e.message ?: "")
+                }
+            },
+        )
+    }
+
+    private fun parseInkLines(array: JSONArray): List<InkLine> {
+        val lines = ArrayList<InkLine>(array.length())
+        for (i in 0 until array.length()) {
+            val line = array.getJSONObject(i)
+            val strokesJson = line.getJSONArray("strokes")
+            val strokes = ArrayList<FloatArray>(strokesJson.length())
+            for (j in 0 until strokesJson.length()) {
+                val coords = strokesJson.getJSONArray(j)
+                strokes.add(FloatArray(coords.length()) { k -> coords.getDouble(k).toFloat() })
+            }
+            lines.add(
+                InkLine(
+                    strokes = strokes,
+                    width = line.getDouble("width").toFloat(),
+                    height = line.getDouble("height").toFloat(),
+                )
+            )
+        }
+        return lines
     }
 
     private fun parseRects(array: JSONArray?): List<BridgeRect> {
