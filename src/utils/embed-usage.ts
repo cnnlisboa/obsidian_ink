@@ -3,9 +3,7 @@ import InkPlugin from "src/main";
 import {
 	DRAW_EMBED_KEY,
 	LEGACY_DRAW_EMBED_KEY,
-	LEGACY_NOTEBOOK_EMBED_KEY,
 	LEGACY_WRITE_EMBED_KEY,
-	NOTEBOOK_EMBED_KEY,
 	WRITE_EMBED_KEY,
 } from "src/constants";
 import { formatEmbedJson, resolveInkFileFromEmbed } from "./embed";
@@ -17,10 +15,8 @@ import { warn } from "./log-to-console";
 const ALL_EMBED_KEYS = [
 	WRITE_EMBED_KEY,
 	DRAW_EMBED_KEY,
-	NOTEBOOK_EMBED_KEY,
 	LEGACY_WRITE_EMBED_KEY,
 	LEGACY_DRAW_EMBED_KEY,
-	LEGACY_NOTEBOOK_EMBED_KEY,
 ];
 
 export type InkEmbedBlock = {
@@ -37,7 +33,7 @@ export type InkEmbedUsage = {
 
 export type NoteInkEmbed = {
 	inkFile: TFile;
-	/** Human readable file type. i.e. 'writing', 'drawing', 'notebook' */
+	/** Human readable file type. i.e. 'writing', 'drawing' */
 	filetype: string;
 };
 
@@ -51,8 +47,6 @@ const EMBED_KEY_FILETYPES: Record<string, string> = {
 	[LEGACY_WRITE_EMBED_KEY]: 'writing',
 	[DRAW_EMBED_KEY]: 'drawing',
 	[LEGACY_DRAW_EMBED_KEY]: 'drawing',
-	[NOTEBOOK_EMBED_KEY]: 'notebook',
-	[LEGACY_NOTEBOOK_EMBED_KEY]: 'notebook',
 };
 
 /**

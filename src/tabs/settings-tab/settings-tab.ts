@@ -43,7 +43,6 @@ export class MySettingsTab extends PluginSettingTab {
 		insertSubfolderSettings(containerEl, this.plugin, () => this.display());
 
 		if(this.plugin.settings.writingEnabled)	insertWritingSettings(containerEl, this.plugin, () => this.display());
-		if(this.plugin.settings.notebookEnabled)	insertNotebookSettings(containerEl, this.plugin, () => this.display());
 		if(this.plugin.settings.drawingEnabled)	insertDrawingSettings(containerEl, this.plugin, () => this.display());
 
 		insertHeading(containerEl, 'Reset');
@@ -148,19 +147,6 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 
 	new Setting(containerEl)
 		.setClass('inkc_setting')
-		.setName('Enable notebook')
-		.setDesc('Notebook mode provides page-based writing with fixed-height pages and page navigation. Changing this setting will require a restart of Obsidian to take effect.')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.notebookEnabled);
-			toggle.onChange(async (value) => {
-				plugin.settings.notebookEnabled = value;
-				await plugin.saveSettings();
-				refresh();
-			});
-		});
-
-	new Setting(containerEl)
-		.setClass('inkc_setting')
 		.setName('Enable drawing')
 		// .setDesc('If disabled, you will still be able to view previously created drawing embeds.')
 		.setDesc('If disabled, you will not be able to add new drawing embeds and those already embedded will appear as raw code. Existing drawing files will be hidden in Obsidian but still exist on disk. Changing this setting will require a restart of Obsidian to take effect.')
@@ -176,7 +162,7 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 	new Setting(containerEl)
 		.setClass('inkc_setting')
 		.setName('Close editor when tapping outside')
-		.setDesc('Save and close an open writing, notebook or drawing section when you tap anywhere else in Obsidian. Pen taps right at the edge of a section, and touches from a resting hand, are ignored. Only one section can be open at a time either way.')
+		.setDesc('Save and close an open writing or drawing section when you tap anywhere else in Obsidian. Pen taps right at the edge of a section, and touches from a resting hand, are ignored. Only one section can be open at a time either way.')
 		.addToggle((toggle) => {
 			toggle.setValue(plugin.settings.closeEditorOnTapOutside);
 			toggle.onChange(async (value) => {
@@ -202,7 +188,7 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 	new Setting(containerEl)
 		.setClass('inkc_setting')
 		.setName('Save an SVG copy of each writing and drawing')
-		.setDesc('Keeps a picture of the ink beside each writing and drawing file (as "Name.inkcwriting.svg"), refreshed a few seconds after each change, so it can be viewed, exported or published without this plugin. Copies follow their file when it\'s renamed or deleted. Notebooks aren\'t copied.')
+		.setDesc('Keeps a picture of the ink beside each writing and drawing file (as "Name.inkcwriting.svg"), refreshed a few seconds after each change, so it can be viewed, exported or published without this plugin. Copies follow their file when it\'s renamed or deleted.')
 		.addToggle((toggle) => {
 			toggle.setValue(plugin.settings.saveSvgSidecar);
 			toggle.onChange(async (value) => {
@@ -231,7 +217,7 @@ function insertHighLevelSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 	new Setting(containerEl)
 		.setClass('inkc_setting')
 		.setName('Name files after their note')
-		.setDesc('New writing, notebook and drawing files are named after the note they are first embedded in, rather than the date and time they were created. A number is appended when a note holds more than one. Renaming an embed later still renames its file.')
+		.setDesc('New writing and drawing files are named after the note they are first embedded in, rather than the date and time they were created. A number is appended when a note holds more than one. Renaming an embed later still renames its file.')
 		.addToggle((toggle) => {
 			toggle.setValue(plugin.settings.nameFilesAfterNote);
 			toggle.onChange(async (value) => {
@@ -254,13 +240,6 @@ function insertSubfolderSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 	const saveDrawingFolder = async (enteredValue: string) => {
 		const value = enteredValue || DEFAULT_SETTINGS.drawingSubfolder;
 		plugin.settings.drawingSubfolder = value.trim();
-		await plugin.saveSettings();
-		refresh();
-	}
-
-	const saveNotebookFolder = async (enteredValue: string) => {
-		const value = enteredValue || DEFAULT_SETTINGS.notebookSubfolder;
-		plugin.settings.notebookSubfolder = value.trim();
 		await plugin.saveSettings();
 		refresh();
 	}
@@ -379,76 +358,10 @@ function insertSubfolderSettings(containerEl: HTMLElement, plugin: InkPlugin, re
 					})
 				});
 
-			inputSettingEl = new Setting(container)
-				.setClass('inkc_setting')
-				.setName('Notebook files subfolder')
-				.addText((textItem) => {
-					textItem.setValue(plugin.settings.notebookSubfolder.toString());
-					textItem.setPlaceholder(DEFAULT_SETTINGS.notebookSubfolder.toString());
-					textItem.inputEl.addEventListener('blur', async (ev: FocusEvent) => {
-						saveNotebookFolder(textItem.getValue());
-					})
-					textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
-						if(ev.key === 'Enter') saveNotebookFolder(textItem.getValue());
-					})
-				});
 			inputSettingEl.settingEl.classList.add('inkc_input-medium');
 		})
 
 
-}
-
-function insertNotebookSettings(containerEl: HTMLElement, plugin: InkPlugin, refresh: Function) {
-
-	const saveLinesPerPage = async (enteredValue: string) => {
-		const value = parseInt(enteredValue) || DEFAULT_SETTINGS.notebookLinesPerPage;
-		plugin.settings.notebookLinesPerPage = Math.max(3, Math.min(50, value));
-		await plugin.saveSettings();
-		refresh();
-	}
-
-	const sectionEl = containerEl;
-	insertHeading(sectionEl, 'Notebook', `Page-based writing with fixed pages and page navigation. Run the command 'New notebook section' to embed a notebook.`);
-
-	const linesPerPageSetting = new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Lines per page')
-		.setDesc('Number of ruled lines on each page (3-50). Default: 10.')
-		.addText((textItem) => {
-			textItem.setValue(plugin.settings.notebookLinesPerPage.toString());
-			textItem.setPlaceholder(DEFAULT_SETTINGS.notebookLinesPerPage.toString());
-			textItem.inputEl.addEventListener('blur', async (ev: FocusEvent) => {
-				saveLinesPerPage(textItem.getValue());
-			});
-			textItem.inputEl.addEventListener('keypress', async (ev: KeyboardEvent) => {
-				if (ev.key === 'Enter') saveLinesPerPage(textItem.getValue());
-			});
-		});
-	linesPerPageSetting.settingEl.classList.add('inkc_input-medium');
-
-	new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Show ruled lines when not editing')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.notebookLinesWhenLocked);
-			toggle.onChange( async (value: boolean) => {
-				plugin.settings.notebookLinesWhenLocked = value;
-				await plugin.saveSettings();
-				refresh();
-			})
-		});
-
-	new Setting(sectionEl)
-		.setClass('inkc_setting')
-		.setName('Show background when not editing')
-		.addToggle((toggle) => {
-			toggle.setValue(plugin.settings.notebookBackgroundWhenLocked);
-			toggle.onChange( async (value: boolean) => {
-				plugin.settings.notebookBackgroundWhenLocked = value;
-				await plugin.saveSettings();
-				refresh();
-			})
-		});
 }
 
 function insertDrawingSettings(containerEl: HTMLElement, plugin: InkPlugin, refresh: Function) {

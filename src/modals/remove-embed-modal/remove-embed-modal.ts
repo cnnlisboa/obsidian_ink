@@ -11,7 +11,7 @@ const MAX_LISTED_NOTES = 6;
 
 type RemoveEmbedModalOptions = {
 	plugin: InkPlugin,
-	/** Human readable file type. i.e. 'writing', 'drawing', 'notebook' */
+	/** Human readable file type. i.e. 'writing', 'drawing' */
 	filetype: string,
 	inkFile: TFile,
 	/** Path of the note the embed being removed lives in. */

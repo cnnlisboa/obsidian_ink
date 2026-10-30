@@ -3,7 +3,7 @@
 ///////
 
 import { EditorPosition, MarkdownPostProcessorContext, MarkdownViewModeType } from "obsidian";
-import { DRAW_EMBED_KEY, DRAWING_INITIAL_ASPECT_RATIO, DRAWING_INITIAL_HEIGHT, DRAWING_INITIAL_WIDTH, NOTEBOOK_EMBED_KEY, PLUGIN_VERSION, WRITE_EMBED_KEY } from "src/constants";
+import { DRAW_EMBED_KEY, DRAWING_INITIAL_ASPECT_RATIO, DRAWING_INITIAL_HEIGHT, DRAWING_INITIAL_WIDTH, PLUGIN_VERSION, WRITE_EMBED_KEY } from "src/constants";
 import InkPlugin from "src/main";
 
 export type WritingEmbedData = {
@@ -54,39 +54,6 @@ export const buildWritingEmbed = (filepath: string, transcript?: string) => {
     embedStr += "\n```";
 	
 	// Adds a blank line at the end so it's easy to place the cursor after
-    embedStr += "\n";
-
-	return embedStr;
-};
-
-//////////
-//////////
-
-export type NotebookEmbedData = {
-	versionAtEmbed: string;
-	link?: string;
-	filepath?: string; // legacy — kept for backward compat with old embeds
-	collapsed?: boolean;
-	title?: string;
-	/**
-	 * Shows the file's name above the embed while it's open, as a caption for finding your way
-	 * around a long note. Collapsed embeds always show it.
-	 */
-	showTitle?: boolean;
-	currentPage?: number;
-};
-
-export const buildNotebookEmbed = (filepath: string) => {
-	const basename = filepath.split('/').pop() ?? filepath;
-	let embedContent: NotebookEmbedData = {
-		versionAtEmbed: PLUGIN_VERSION,
-		link: `[[${basename}]]`,
-	}
-
-	let embedStr = "";
-    embedStr += "\n```" + NOTEBOOK_EMBED_KEY;
-    embedStr += "\n" + formatEmbedJson(embedContent as Record<string, unknown>);
-    embedStr += "\n```";
     embedStr += "\n";
 
 	return embedStr;

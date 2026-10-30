@@ -9,7 +9,7 @@ import { warn } from "src/utils/log-to-console";
 
 // An SVG copy of each writing and drawing file, kept beside it, so the ink can be seen, exported
 // and published without this plugin. The ink file stays the source of truth; the copy is
-// rewritten from it. Notebooks are left out: one SVG can't stand for several pages.
+// rewritten from it.
 const SIDECAR_EXTS = [WRITE_FILE_EXT, DRAW_FILE_EXT];
 
 // A copy is written once a file has gone this long without changing, so nothing runs while the

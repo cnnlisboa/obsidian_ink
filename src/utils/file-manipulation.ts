@@ -1,10 +1,10 @@
 import { TFile, normalizePath } from "obsidian";
-import { DRAW_FILE_EXT, NOTEBOOK_FILE_EXT, WRITE_FILE_EXT } from "src/constants";
+import { DRAW_FILE_EXT, WRITE_FILE_EXT } from "src/constants";
 import InkPlugin from "src/main";
 import { getDateFilename } from "./getDateFilename";
 import { getVersionedFilepath } from "./getVersionedFilepath";
 import { getBaseAttachmentPath } from "./getBaseAttachmentPath";
-import { getWritingSubfolderPath, getDrawingSubfolderPath, getNotebookSubfolderPath } from "./getSubfolderPaths";
+import { getWritingSubfolderPath, getDrawingSubfolderPath } from "./getSubfolderPaths";
 import { parseFilepath } from "./parseFilepath";
 import { getObsidianAttachmentFolderPath } from "./obsidian-interfaces";
 import { debug } from "./log-to-console";
@@ -36,17 +36,6 @@ export const getNewTimestampedDrawingFilepath = async (plugin: InkPlugin, instig
     return fullPath;
 }
 
-export const getNewTimestampedNotebookFilepath = async (plugin: InkPlugin, instigatingFile?: TFile | null, basenameOverride?: string) => {
-    const obsAttachmentFolderPath = await getObsidianAttachmentFolderPath(plugin);
-    const instigatingFileFolderPath = instigatingFile ? parseFilepath(instigatingFile?.path).folderpath : null;
-    let basePath = await getBaseAttachmentPath(plugin, {
-        obsAttachmentFolderPath,
-        instigatingFileFolderPath,
-    });
-    let subFolderPath = getNotebookSubfolderPath(plugin);
-    const fullPath = await getNewInkFilepath(plugin, NOTEBOOK_FILE_EXT, `${basePath}/${subFolderPath}`, instigatingFile, basenameOverride);
-    return fullPath;
-}
 
 const getNewInkFilepath = async (
     plugin: InkPlugin,

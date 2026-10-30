@@ -11,7 +11,7 @@ interface EditorControls {
 }
 
 /**
- * Opening and closing an embed's editor, shared by the writing, notebook and drawing embeds.
+ * Opening and closing an embed's editor, shared by the writing and drawing embeds.
  *
  * - Opening an embed closes whichever other embed was open (see open-embed.ts).
  * - Closing saves first, and is safe to call at any point: twice, while already closing, or

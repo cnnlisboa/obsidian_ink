@@ -23,7 +23,6 @@ export interface PluginSettings {
     notelessAttachmentFolderLocation: 'obsidian' | 'root',
 	writingSubfolder: string,
 	drawingSubfolder: string,
-	notebookSubfolder: string,
 	// Writing specific
 	writingEnabled: boolean,
 	writingStrokeLimit: number,
@@ -36,8 +35,8 @@ export interface PluginSettings {
 	writingSmoothing: boolean,
 	writingStreamline: number,
 	stylusOnlyInput: boolean,
-	// The pen and highlighter last picked in a writing toolbar. Shared by every writing and
-	// notebook editor, so a pen chosen in one note is still in hand in the next.
+	// The pen and highlighter last picked in a writing toolbar. Shared by every writing editor,
+	// so a pen chosen in one note is still in hand in the next.
 	writingPenColor: TLDefaultColorStyle,
 	writingPenSize: TLDefaultSizeStyle,
 	writingHighlighterColor: TLDefaultColorStyle,
@@ -57,12 +56,6 @@ export interface PluginSettings {
 	writingManualLineAddCount: number,
 	writingLinesWhenLocked: boolean,
 	writingBackgroundWhenLocked: boolean,
-	// Notebook specific
-	notebookEnabled: boolean,
-	notebookLinesPerPage: number,
-	notebookStrokeLimit: number,
-	notebookLinesWhenLocked: boolean,
-	notebookBackgroundWhenLocked: boolean,
 	// Drawing specific
 	drawingEnabled: boolean,
 	drawingFrameWhenLocked: boolean,
@@ -86,7 +79,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	notelessAttachmentFolderLocation: 'obsidian',
 	writingSubfolder: 'Ink/Writing',
 	drawingSubfolder: 'Ink/Drawing',
-	notebookSubfolder: 'Ink/Notebook',
 	// Writing specific
 	writingEnabled: true,
 	writingStrokeLimit: 200,
@@ -112,12 +104,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingManualLineAddCount: 5,
 	writingLinesWhenLocked: true,
 	writingBackgroundWhenLocked: true,
-	// Notebook specific
-	notebookEnabled: true,
-	notebookLinesPerPage: 10,
-	notebookStrokeLimit: 200,
-	notebookLinesWhenLocked: true,
-	notebookBackgroundWhenLocked: true,
 	// Drawing specific
 	drawingEnabled: true,
 	drawingFrameWhenLocked: false,

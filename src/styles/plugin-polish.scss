@@ -32,7 +32,6 @@
 // The editor fades in once its camera is positioned (see tldraw-*-editor.tsx,
 // which flips opacity to 1 on mount) rather than snapping in mid-layout.
 .inkc_writing-editor,
-.inkc_notebook-editor,
 .inkc_drawing-editor {
     transition: opacity 0.14s ease-out;
 }
@@ -181,10 +180,6 @@ body.inkc_ereader {
         font-style: normal;
     }
 
-    // Page navigation is normally revealed on hover — there is no hover here.
-    .inkc_preview-page-nav {
-        opacity: 1;
-    }
 
     // 48px is the smallest target that's reliably hit with a stylus on a panel with no hover to
     // confirm where the nib is. Looks oversized next to a desktop toolbar; it isn't on device.
@@ -293,8 +288,7 @@ body.inkc_ereader {
     }
 
     .inkc_writing-embed-preview,
-    .inkc_drawing-embed-preview,
-    .inkc_notebook-embed-preview {
+    .inkc_drawing-embed-preview {
         cursor: default;
 
         svg,

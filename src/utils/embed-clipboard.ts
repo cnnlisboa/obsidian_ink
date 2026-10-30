@@ -9,13 +9,12 @@
 
 import { Editor, Notice, TFile } from "obsidian";
 import InkPlugin from "src/main";
-import { DRAW_EMBED_KEY, NOTEBOOK_EMBED_KEY, WRITE_EMBED_KEY } from "src/constants";
+import { DRAW_EMBED_KEY, WRITE_EMBED_KEY } from "src/constants";
 import { resolveInkFileFromEmbed, stringifyEmbedData } from "./embed";
 import { duplicateDrawingFile, duplicateWritingFile } from "./rememberDrawingFile";
-import { getNewTimestampedNotebookFilepath } from "./file-manipulation";
 import { PasteEmbedModal } from "src/modals/paste-embed-modal/paste-embed-modal";
 
-const EMBED_KEYS: string[] = [WRITE_EMBED_KEY, DRAW_EMBED_KEY, NOTEBOOK_EMBED_KEY];
+const EMBED_KEYS: string[] = [WRITE_EMBED_KEY, DRAW_EMBED_KEY];
 
 type ParsedEmbed = {
 	key: string,
@@ -66,10 +65,6 @@ async function duplicateForKey(plugin: InkPlugin, key: string, file: TFile, inst
 	if (key === DRAW_EMBED_KEY) return duplicateDrawingFile(plugin, file, instigatingFile);
 	if (key === WRITE_EMBED_KEY) return duplicateWritingFile(plugin, file, instigatingFile);
 
-	if (key === NOTEBOOK_EMBED_KEY) {
-		const newPath = await getNewTimestampedNotebookFilepath(plugin, instigatingFile);
-		return plugin.app.vault.copy(file, newPath);
-	}
 
 	return null;
 }
