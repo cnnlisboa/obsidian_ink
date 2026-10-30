@@ -5,6 +5,7 @@ import { Activity, WritingCameraLimits, adaptTldrawToObsidianThemeMode, deleteOb
 import { WritingContainer, WritingContainerUtil } from "../writing-shapes/writing-container"
 import { WritingMenu } from "../writing-menu/writing-menu";
 import { InkSelectTool } from "../ink-select-tool";
+import { eraseScratchOuts } from "../scratch-out";
 import InkPlugin from "../../main";
 import * as React from "react";
 import { MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, NOTEBOOK_LINE_HEIGHT, NOTEBOOK_PAGE_WIDTH } from 'src/constants';
@@ -217,6 +218,7 @@ export function TldrawNotebookEditor(props: TldrawNotebookEditorProps) {
 					break;
 
 				case Activity.DrawingCompleted:
+					if (props.plugin.settings.writingScratchOut) eraseScratchOuts(editor, entry);
 					queueOrRunStorePostProcesses(editor);
 					// Auto-create next page on overflow
 					if (detectPageOverflow(editor, pageHeight)) {

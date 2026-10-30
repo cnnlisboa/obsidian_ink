@@ -36,6 +36,8 @@ export interface PluginSettings {
 	writingPenColor: TLDefaultColorStyle,
 	writingPenSize: TLDefaultSizeStyle,
 	writingHighlighterColor: TLDefaultColorStyle,
+	// Scribbling back and forth over ink deletes it. See scratch-out.ts.
+	writingScratchOut: boolean,
 	companionBridgeEnabled: boolean,
 	companionBridgePort: number,
 	fingerSwipeScroll: boolean,
@@ -86,6 +88,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingPenColor: 'black',
 	writingPenSize: 'm',
 	writingHighlighterColor: 'yellow',
+	writingScratchOut: true,
 	companionBridgeEnabled: false,
 	companionBridgePort: 8765,
 	fingerSwipeScroll: false,

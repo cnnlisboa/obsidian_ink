@@ -5,6 +5,7 @@ import { Activity, WritingCameraLimits, isInkShapeType, adaptTldrawToObsidianThe
 import { WritingContainer, WritingContainerUtil } from "../writing-shapes/writing-container"
 import { WritingMenu } from "../writing-menu/writing-menu";
 import { InkSelectTool } from "../ink-select-tool";
+import { eraseScratchOuts } from "../scratch-out";
 import InkPlugin from "../../main";
 import * as React from "react";
 import { MENUBAR_HEIGHT_PX, WRITE_LONG_DELAY_MS, WRITE_LONG_DELAY_MS_EREADER, WRITE_SHORT_DELAY_MS, WRITING_LINE_HEIGHT, WRITING_MIN_PAGE_HEIGHT, WRITING_PAGE_WIDTH } from 'src/constants';
@@ -254,6 +255,7 @@ export function TldrawWritingEditor(props: TldrawWritingEditorProps) {
 
 				case Activity.DrawingCompleted:
 					updateContentMaxYFromEntry(entry);
+					if (props.plugin.settings.writingScratchOut) eraseScratchOuts(editor, entry);
 					queueOrRunStorePostProcesses(editor);
 					// Stash old shapes off the hot path so the next pen-down isn't blocked by store mutations.
 					const idle = (window as any).requestIdleCallback as undefined | ((cb: () => void) => number);

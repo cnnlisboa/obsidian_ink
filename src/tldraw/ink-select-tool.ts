@@ -1,5 +1,6 @@
 import { Box, SelectTool, StateNode, TLPointerEventInfo, TLShape, TLShapeId, Vec, VecModel } from "@tldraw/tldraw";
 import { isEreader } from "src/utils/isEreader";
+import { fractionOfShapeInPolygon } from "src/utils/ink-geometry";
 
 //////////
 //////////
@@ -10,8 +11,6 @@ const TEMPLATE_SHAPE_TYPES = new Set(['writing-container', 'writing-lines']);
 // How much of a stroke has to fall inside the lasso for it to be picked up. Generous enough that
 // a loop drawn a little tight around a word still takes all of it.
 const ENCLOSED_FRACTION = 0.5;
-// Points tested per shape. Enough to tell a stroke that's inside from one the lasso clips.
-const MAX_SAMPLES_PER_SHAPE = 24;
 
 const BasePointingCanvas = SelectTool.children().find(child => child.id === 'pointing_canvas') as unknown as typeof StateNode;
 const BasePointingShape = SelectTool.children().find(child => child.id === 'pointing_shape') as unknown as typeof StateNode;
@@ -124,16 +123,7 @@ class Lassoing extends StateNode {
 			.filter((shape) => {
 				const bounds = this.editor.getShapePageBounds(shape);
 				if (!bounds || !lassoBounds.collides(bounds)) return false;
-				const vertices = this.editor.getShapePageTransform(shape).applyToPoints(this.editor.getShapeGeometry(shape).vertices);
-				if (vertices.length === 0) return false;
-				const step = Math.max(1, Math.floor(vertices.length / MAX_SAMPLES_PER_SHAPE));
-				let tested = 0;
-				let inside = 0;
-				for (let i = 0; i < vertices.length; i += step) {
-					tested++;
-					if (isPointInPolygon(vertices[i], polygon)) inside++;
-				}
-				return inside / tested >= ENCLOSED_FRACTION;
+				return fractionOfShapeInPolygon(this.editor, shape, polygon) >= ENCLOSED_FRACTION;
 			})
 			.map((shape) => shape.id);
 	}
@@ -155,18 +145,4 @@ export class InkSelectTool extends SelectTool {
 		LassoPointingShape,
 		Lassoing,
 	];
-}
-
-// Even-odd ray casting. The lasso is closed implicitly between its last point and its first.
-function isPointInPolygon(point: VecModel, polygon: VecModel[]): boolean {
-	let inside = false;
-	for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-		const a = polygon[i];
-		const b = polygon[j];
-		if ((a.y > point.y) !== (b.y > point.y)
-			&& point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) {
-			inside = !inside;
-		}
-	}
-	return inside;
 }

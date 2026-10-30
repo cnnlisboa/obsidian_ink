@@ -560,6 +560,18 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 			});
 		});
 
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
+		.setName('Scratch out to erase')
+		.setDesc('Scribble back and forth over handwriting with the pen to delete it, as you would cross it out on paper. A scribble over empty space stays as writing, and Undo brings scratched-out writing back.')
+		.addToggle((toggle) => {
+			toggle.setValue(plugin.settings.writingScratchOut);
+			toggle.onChange(async (value: boolean) => {
+				plugin.settings.writingScratchOut = value;
+				await plugin.saveSettings();
+			});
+		});
+
 	// Finger swipe scrolling only exists while fingers aren't writing, which is always the case on
 	// e-ink devices regardless of the setting (see initialStylusOnly in the writing editor).
 	if(plugin.settings.stylusOnlyInput || isEreader()) {
