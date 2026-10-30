@@ -3,9 +3,6 @@ A personal fork of the [Ink](https://github.com/daledesilva/obsidian_ink) plugin
 
 Hand write or draw directly between paragraphs in your notes using a digital pen, stylus, or Apple pencil. Useful for handwriting, sketches, scribbles, or even math equations and scientific notation. Runs on the tldraw framework and drawing provides an infinite canvas.
 
-## ⚠️ Known Issues - v0.3.5
-**Notebooks feature is not fully working.** The multi-page notebook functionality has reliability issues and may not work as expected. If you encounter problems with notebooks, please consider using single-page writing embeds as a workaround. Updates to address this are in development.
-
 ## 🎥 Demo
 <p align="center">
   <a href="https://www.youtube.com/watch?v=qgir8F7ezNM" target="_blank">
@@ -36,7 +33,7 @@ Below are the high level features in my current development plan along with thei
 <details open>
 <summary>Current feature focus</summary>
 
-- [ ] Fix notebook multi-page functionality and reliability issues.
+- [x] Pages in handwriting files (replacing the separate notebook type).
 - [ ] Ability to reframe embedded drawings.
 - [ ] Pen smoothing enhancements.
 - [ ] Support for e-ink devices (Onyx Boox and similar).
@@ -86,9 +83,16 @@ This fork is not published in Obsidian's Community Plugins directory. It's insta
 ## 🗒️ Notes
 
 #### Optimisation Notes
-The plugin currently works based on the [tldraw](https://tldraw.dev/) framework, however, tldraw is implemented using SVG elements which slow down greatly on iOS platforms and possibly others. This equates to significant lag while writing after about 200-300 strokes on iOS (Which is about 3-4 paragraphs). To temporarily mitigate this, the plugin hides strokes while writing that are several lines old. The strokes are still saved and reappear upon freezing the embed, reopening the file, or adjusting the infinite canvas view.
+The plugin currently works based on the [tldraw](https://tldraw.dev/) framework, however, tldraw is implemented using SVG elements which slow down greatly on iOS platforms and possibly others. This equates to significant lag while writing after about 200-300 strokes on iOS (Which is about 3-4 paragraphs). To temporarily mitigate this, once a writing passes the stroke limit the plugin hides its oldest strokes while you write, but only ones above what's on screen. They're still saved, and come back as you scroll up to them. A writing split into pages only keeps the page in view on the canvas, so long writings stay quick.
 
 In the future, this plugin will transition off tldraw (at least for writing functionality), to Canvas based input. When this occurs any files that users have created will be converted automatically if necessary—You can count on this as I already have many files in my own vaults that rely on this plugin.
+
+#### Pages
+A handwriting section is one long sheet until you add a page to it. The **Add page** button (on the section, and in its editor) splits it into A4 pages and adds a blank one; nothing already written moves. A paged section shows one page at a time, with **‹ 2 / 5 ›** controls and Page Up / Page Down, and opens on the page you last used.
+
+To show a single page somewhere else, use **Copy embed of this page** from the section's menu and paste it into any note, or add `"page": 3` to an embed's code block. The page's handwriting is transcribed on its own, so search finds the note that shows it. Pages are only ever added at the end, so a page's number never changes.
+
+The setting **Split long writings into pages** does the splitting automatically for any section longer than a page.
 
 #### Embed Format Notes
 The embed implementation is currently based on a code block that tells the plugin how to display the embed. I'm not happy with this, however, as it means if anyone ever wants to transition off this plugin they have to keep it installed in order to see their old handwritten sections.
