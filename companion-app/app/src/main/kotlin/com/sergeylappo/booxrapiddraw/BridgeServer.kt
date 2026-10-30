@@ -197,30 +197,13 @@ class BridgeServer(port: Int, private val listener: BridgeServerListener) :
         Log.i(TAG, "Bridge server listening on 127.0.0.1:$port")
     }
 
-    /** Sends one stroke point (already converted to CSS/viewport-relative coordinates). */
-    fun sendStrokePoint(
-        sessionId: String,
-        canvasId: String,
-        x: Double,
-        y: Double,
-        pressure: Double,
-        phase: String,
-        t: Long,
-    ) {
-        val point = JSONObject().apply {
-            put("x", x)
-            put("y", y)
-            put("pressure", pressure)
-            put("tilt", 0)
-            put("isPen", true)
-            put("phase", phase)
-            put("t", t)
-        }
+    /** Sends stroke points (already converted to CSS/viewport-relative coordinates), in order. */
+    fun sendStrokePoints(sessionId: String, canvasId: String, points: JSONArray) {
         val msg = JSONObject().apply {
             put("type", "strokePoints")
             put("sessionId", sessionId)
             put("canvasId", canvasId)
-            put("points", JSONArray().put(point))
+            put("points", points)
         }
         val text = msg.toString()
         for (conn in connections) {

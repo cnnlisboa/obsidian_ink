@@ -13,6 +13,7 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import android.os.Looper
 import android.view.Gravity
@@ -33,11 +34,21 @@ import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
 import com.sergeylappo.booxrapiddraw.utils.BridgePrefs
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val TAG = "RapidDrawOverlay"
 
 private const val CHANNEL_ID = "rapid_draw_channel_overlay_01"
 private const val STROKE_WIDTH = 3.0f
+
+// Pen points go to the plugin a frame's worth at a time. tldraw draws once a frame anyway, and the
+// instant ink on screen is the overlay's, so nothing visible waits on this.
+private const val POINT_BATCH_MS = 16L
+
+// With light pen detail on, a moving point is only sent once it's this far from the last one sent,
+// in CSS px — about the spacing of the WebView's own pen events. See BridgePrefs.isLightPenDetail.
+private const val LIGHT_POINT_SPACING_CSS_PX = 3.0
 
 class OverlayShowingService : Service(), BridgeServerListener {
     private val paint = Paint()
@@ -54,6 +65,18 @@ class OverlayShowingService : Service(), BridgeServerListener {
     // Answers the plugin's transcription requests. Independent of the pen and the overlay.
     private val inkRecognizer by lazy { InkRecognizer(applicationContext) }
 
+    // Read once and updated on toggle, rather than from SharedPreferences for every pen sample.
+    @Volatile private var lightPenDetail = true
+
+    // Points waiting to go out in the next batch. Filled from the pen's callback thread, sent from
+    // pointSender's, in order.
+    private class PendingPoint(val sessionId: String, val canvasId: String, val point: JSONObject)
+    private val pendingPoints = ArrayList<PendingPoint>()
+    private var batchScheduled = false
+    private val pointSenderThread = HandlerThread("bridge-points").apply { start() }
+    private val pointSender = Handler(pointSenderThread.looper)
+    private val sendBatch = Runnable { flushPoints() }
+
     override fun onBind(intent: Intent) = null
 
     override fun onCreate() {
@@ -68,6 +91,7 @@ class OverlayShowingService : Service(), BridgeServerListener {
         initPaint()
         initSurfaceView()
 
+        lightPenDetail = BridgePrefs.isLightPenDetail(this)
         bridgeServer = BridgeServer(BuildConfig.BRIDGE_PORT, this).also { it.start() }
     }
 
@@ -83,6 +107,13 @@ class OverlayShowingService : Service(), BridgeServerListener {
             BridgePrefs.setObsidianOnlyMode(this, newValue)
             applyCaptureState()
             createForegroundNotification() // rebuild so the action label reflects the new state
+            return START_STICKY
+        }
+
+        if (intent?.action == "TOGGLE_LIGHT_PEN_DETAIL") {
+            lightPenDetail = !lightPenDetail
+            BridgePrefs.setLightPenDetail(this, lightPenDetail)
+            createForegroundNotification()
             return START_STICKY
         }
 
@@ -121,12 +152,21 @@ class OverlayShowingService : Service(), BridgeServerListener {
         )
         val toggleLabel = if (obsidianOnly) "Obsidian-only: ON (tap for all apps)" else "Obsidian-only: OFF (tap to restrict)"
 
+        val togglePenDetailIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, OverlayShowingService::class.java).apply { action = "TOGGLE_LIGHT_PEN_DETAIL" },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val penDetailLabel = if (BridgePrefs.isLightPenDetail(this)) "Pen detail: light (tap for full)" else "Pen detail: full (tap for light)"
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.overlay_service_notification_content_title))
             .setContentText(getString(R.string.overlay_service_notification_content))
             .setSmallIcon(R.drawable.rapid_draw)
             .addAction(NotificationCompat.Action.Builder(null, "Stop", pendingIntent).build())
             .addAction(NotificationCompat.Action.Builder(null, toggleLabel, toggleObsidianOnlyIntent).build())
+            .addAction(NotificationCompat.Action.Builder(null, penDetailLabel, togglePenDetailIntent).build())
             .build()
 
         //noinspection InlinedApi (Seems to work, IDK why, maybe older Android versions might not support this)
@@ -191,6 +231,8 @@ class OverlayShowingService : Service(), BridgeServerListener {
                 touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
                 touchHelper.openRawDrawing()
                 touchHelper.setStrokeWidth(STROKE_WIDTH).setLimitRect(bounds, listOf())
+                appliedLimit = Rect(bounds)
+                appliedExcludes = emptyList()
                 touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
                 applyCaptureState() // applies Obsidian-only-mode's initial disabled state, if on
                 overlayPaintingView.addOnLayoutChangeListener(this)
@@ -206,6 +248,7 @@ class OverlayShowingService : Service(), BridgeServerListener {
         touchHelper.closeRawDrawing()
         bridgeServer?.stop()
         bridgeServer = null
+        pointSenderThread.quitSafely()
         inkRecognizer.close()
     }
 
@@ -274,19 +317,34 @@ class OverlayShowingService : Service(), BridgeServerListener {
             val top = ((mode.screenOriginY + mode.rectTop) * scale).toInt() - origin[1]
             val right = left + (mode.rectWidth * scale).toInt()
             val bottom = top + (mode.rectHeight * scale).toInt()
-            Log.i(
-                TAG,
-                "capture limit=($left,$top,$right,$bottom) excludes=${excludes.size}" +
-                    excludes.joinToString(prefix = " ", separator = " ") { "[${it.left},${it.top},${it.right},${it.bottom}]" }
-            )
-            touchHelper.setLimitRect(Rect(left, top, right, bottom), excludes)
+            if (setLimitRectIfChanged(Rect(left, top, right, bottom), excludes)) {
+                Log.i(
+                    TAG,
+                    "capture limit=($left,$top,$right,$bottom) excludes=${excludes.size}" +
+                        excludes.joinToString(prefix = " ", separator = " ") { "[${it.left},${it.top},${it.right},${it.bottom}]" }
+                )
+            }
             setRawCaptureEnabled(true)
         } else {
             // No session: back to the app's general-purpose behaviour, whole screen, nothing
             // excluded. Stale exclusions here would be invisible dead patches in other apps.
-            touchHelper.setLimitRect(fullScreenBounds, listOf())
+            setLimitRectIfChanged(fullScreenBounds, listOf())
             setRawCaptureEnabled(!BridgePrefs.isObsidianOnlyMode(this))
         }
+    }
+
+    // The capture region last handed to the SDK. Each change costs two native calls and two into
+    // Onyx's display controller, and the plugin re-sends its state on every pen-down and every
+    // frame of a scroll, mostly unchanged — so an update that changes nothing isn't applied again.
+    private var appliedLimit: Rect? = null
+    private var appliedExcludes: List<Rect> = emptyList()
+
+    private fun setLimitRectIfChanged(limit: Rect, excludes: List<Rect>): Boolean {
+        if (limit == appliedLimit && excludes == appliedExcludes) return false
+        touchHelper.setLimitRect(limit, excludes)
+        appliedLimit = Rect(limit)
+        appliedExcludes = excludes.map { Rect(it) }
+        return true
     }
 
     // Mirrors the reader's last-applied enabled state so setRawInputReaderEnable is only
@@ -346,15 +404,70 @@ class OverlayShowingService : Service(), BridgeServerListener {
             )
         }
 
-        bridgeServer?.sendStrokePoint(
-            sessionId = mode.sessionId,
-            canvasId = mode.canvasId,
-            x = cssX,
-            y = cssY,
-            pressure = point.pressure.toDouble(),
-            phase = phase,
-            t = point.timestamp.toLong(),
+        // Down and up always go, so every stroke starts and ends exactly where the pen did.
+        if (phase == "move" && lightPenDetail) {
+            val last = lastSentPoint
+            if (last != null && Math.hypot(cssX - last[0], cssY - last[1]) < LIGHT_POINT_SPACING_CSS_PX) return
+        }
+        lastSentPoint = if (phase == "up") null else doubleArrayOf(cssX, cssY)
+
+        queuePoint(
+            PendingPoint(
+                sessionId = mode.sessionId,
+                canvasId = mode.canvasId,
+                point = JSONObject().apply {
+                    put("x", cssX)
+                    put("y", cssY)
+                    put("pressure", point.pressure.toDouble())
+                    put("tilt", 0)
+                    put("isPen", true)
+                    put("phase", phase)
+                    put("t", point.timestamp.toLong())
+                },
+            ),
+            endOfStroke = phase == "up",
         )
+    }
+
+    // The last point sent in the current stroke, in CSS px. Only touched from the pen's callbacks.
+    private var lastSentPoint: DoubleArray? = null
+
+    private fun queuePoint(point: PendingPoint, endOfStroke: Boolean) {
+        synchronized(pendingPoints) {
+            pendingPoints.add(point)
+            if (endOfStroke) {
+                // The stroke is complete, so it goes now rather than waiting out the batch.
+                pointSender.removeCallbacks(sendBatch)
+                batchScheduled = false
+                pointSender.post(sendBatch)
+                return
+            }
+            if (batchScheduled) return
+            batchScheduled = true
+            pointSender.postDelayed(sendBatch, POINT_BATCH_MS)
+        }
+    }
+
+    private fun flushPoints() {
+        val batch: List<PendingPoint>
+        synchronized(pendingPoints) {
+            batch = ArrayList(pendingPoints)
+            pendingPoints.clear()
+            batchScheduled = false
+        }
+        // One message per run of points from the same session, in the order they were drawn.
+        var start = 0
+        while (start < batch.size) {
+            val first = batch[start]
+            val points = JSONArray()
+            var end = start
+            while (end < batch.size && batch[end].sessionId == first.sessionId && batch[end].canvasId == first.canvasId) {
+                points.put(batch[end].point)
+                end++
+            }
+            bridgeServer?.sendStrokePoints(first.sessionId, first.canvasId, points)
+            start = end
+        }
     }
 
 
