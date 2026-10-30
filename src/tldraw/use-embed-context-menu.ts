@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Platform } from "obsidian";
 import { buildMenu, menuOption } from "./overflow-menu/overflow-menu";
+import { isInReadingMode } from "src/utils/embed";
 
 //////////
 //////////
@@ -16,7 +17,7 @@ const LONG_PRESS_SLOP_PX = 10;
  * Android, and Chromium generally, turn a long press into a `contextmenu` event. iOS doesn't, so
  * there the press is timed here instead.
  */
-export function useEmbedContextMenu(getMenuOptions: () => menuOption[]) {
+export function useEmbedContextMenu(getMenuOptions: () => menuOption[], containerElRef: React.RefObject<HTMLElement>) {
 	const pressRef = React.useRef<{ timer: number, x: number, y: number } | null>(null);
 	const suppressClickRef = React.useRef(false);
 
@@ -28,13 +29,20 @@ export function useEmbedContextMenu(getMenuOptions: () => menuOption[]) {
 
 	React.useEffect(() => cancelPress, []);
 
+	// Reading mode has no editor to open and no codeblock to write to.
+	const buildEmbedMenu = () => {
+		const containerEl = containerElRef.current;
+		const options = getMenuOptions();
+		return buildMenu(containerEl && isInReadingMode(containerEl) ? options.filter(o => !o.editsNote) : options);
+	};
+
 	return {
 		handlers: {
 			onContextMenu: (e: React.MouseEvent) => {
 				e.preventDefault();
 				e.stopPropagation();
 				cancelPress();
-				buildMenu(getMenuOptions()).showAtMouseEvent(e.nativeEvent);
+				buildEmbedMenu().showAtMouseEvent(e.nativeEvent);
 			},
 			onPointerDown: (e: React.PointerEvent) => {
 				if (!Platform.isIosApp || e.pointerType === 'mouse') return;
@@ -44,7 +52,7 @@ export function useEmbedContextMenu(getMenuOptions: () => menuOption[]) {
 				const timer = window.setTimeout(() => {
 					pressRef.current = null;
 					suppressClickRef.current = true;
-					buildMenu(getMenuOptions()).showAtPosition({ x, y });
+					buildEmbedMenu().showAtPosition({ x, y });
 				}, LONG_PRESS_MS);
 				pressRef.current = { timer, x, y };
 			},

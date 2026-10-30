@@ -26,7 +26,21 @@
     border-radius: 8px;
     background-color: var(--color-base-20);
     cursor: default;
+}
 
+// The title above an open embed, when turned on. See WritingEmbedData.showTitle.
+.inkc_embed-title {
+    padding: 0 12px 6px;
+    line-height: 1.4;
+
+    &.inkc_hidden {
+        visibility: hidden;
+    }
+}
+
+// Shared by the collapsed bar and the open embed's title. See EmbedTitle.
+.inkc_collapsed-bar,
+.inkc_embed-title {
     .inkc_collapsed-label {
         font-size: 13px;
         color: var(--text-muted);

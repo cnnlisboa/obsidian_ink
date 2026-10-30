@@ -43,7 +43,7 @@ const NotebookEmbedPreview: React.FC<NotebookEmbedPreviewProps> = (props) => {
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const onLoadTimeoutRef = React.useRef<NodeJS.Timeout>();
     const setEmbedState = useSetAtom(notebookEmbedStateAtom);
-    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? []);
+    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? [], containerElRef);
     const [fileSrc, setFileSrc] = React.useState<string>(emptyWritingSvg);
     const [totalPages, setTotalPages] = React.useState(1);
 

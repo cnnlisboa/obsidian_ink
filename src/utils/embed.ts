@@ -14,6 +14,11 @@ export type WritingEmbedData = {
 	collapsed?: boolean;
 	title?: string;
 	/**
+	 * Shows the file's name above the embed while it's open, as a caption for finding your way
+	 * around a long note. Collapsed embeds always show it.
+	 */
+	showTitle?: boolean;
+	/**
 	 * Caps the embed's rendered height in px, turning it into a scrollable window so a long
 	 * writing takes a small, fixed slot in the note. Undefined means "grow to fit", the original
 	 * behaviour. Per-embed rather than per-file because it describes this view of the writing.
@@ -59,6 +64,11 @@ export type NotebookEmbedData = {
 	filepath?: string; // legacy — kept for backward compat with old embeds
 	collapsed?: boolean;
 	title?: string;
+	/**
+	 * Shows the file's name above the embed while it's open, as a caption for finding your way
+	 * around a long note. Collapsed embeds always show it.
+	 */
+	showTitle?: boolean;
 	currentPage?: number;
 };
 
@@ -89,6 +99,11 @@ export type DrawingEmbedData = {
 	aspectRatio?: number,
 	collapsed?: boolean,
 	title?: string,
+	/**
+	 * Shows the file's name above the embed while it's open, as a caption for finding your way
+	 * around a long note. Collapsed embeds always show it.
+	 */
+	showTitle?: boolean,
 	/**
 	 * Which part of the drawing this embed shows, in page coordinates. Undefined means "fit the
 	 * whole drawing", the original behaviour. Per-embed so one drawing can appear several times,

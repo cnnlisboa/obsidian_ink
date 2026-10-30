@@ -83,8 +83,11 @@
     &:hover {
         background-color: var(--color-base-25, var(--background-modifier-hover));
     }
+}
 
-    // Hints that the title is editable without adding a permanent underline.
+// Hints that a title is editable without adding a permanent underline.
+.inkc_collapsed-bar,
+.inkc_embed-title {
     .inkc_collapsed-label:hover {
         text-decoration: underline dotted;
         text-underline-offset: 3px;

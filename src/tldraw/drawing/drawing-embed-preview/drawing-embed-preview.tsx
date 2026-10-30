@@ -51,7 +51,7 @@ export const DrawingEmbedPreview: React.FC<DrawingEmbedPreviewProps> = (props) =
 
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const setEmbedState = useSetAtom(embedStateAtom);
-    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? []);
+    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? [], containerElRef);
     const [fileSrc, setFileSrc] = React.useState<string>(emptyDrawingSvg);
 
     React.useEffect(() => {

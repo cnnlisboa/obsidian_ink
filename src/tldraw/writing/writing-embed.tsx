@@ -15,13 +15,13 @@ import { openInkFile } from "src/utils/open-file";
 import { WritingEmbedData } from "src/utils/embed";
 import { nanoid } from "nanoid";
 import classNames from "classnames";
-import { atom, useSetAtom } from "jotai";
+import { atom, useAtomValue, useSetAtom } from "jotai";
 import { getInkFileData } from "src/utils/getInkFileData";
 import { verbose } from "src/utils/log-to-console";
 import { CollapseIcon } from "src/graphics/icons/collapse-icon";
 import { ExpandIcon } from "src/graphics/icons/expand-icon";
 import { FullscreenIcon } from "src/graphics/icons/fullscreen-icon";
-import { hasCoarsePointer } from "src/utils/device-classes";
+import { EmbedTitle } from "src/components/jsx-components/embed-title/embed-title";
 import { EmbedHeightModal } from "src/modals/embed-height-modal/embed-height-modal";
 import { copyEmbedToClipboard } from "src/utils/embed-clipboard";
 import { WRITE_EMBED_KEY } from "src/constants";
@@ -64,6 +64,7 @@ export function WritingEmbed (props: {
 	onCollapsedChange?: (collapsed: boolean) => void,
 	onDisplayChange?: (display: { maxHeight: number | undefined, scale: number | undefined }) => void,
 	onTitleChange?: (title: string) => void,
+	onShowTitleChange?: (showTitle: boolean) => void,
 }) {
 	const embedContainerElRef = useRef<HTMLDivElement>(null);
 	const resizeContainerElRef = useRef<HTMLDivElement>(null);
@@ -86,8 +87,8 @@ export function WritingEmbed (props: {
 	});
 	const [collapsed, setCollapsed] = useState(props.embedData?.collapsed ?? false);
 	const [title, setTitle] = useState(props.writingFileRef.basename);
-	const [isEditingTitle, setIsEditingTitle] = useState(false);
-	const titleInputRef = useRef<HTMLInputElement>(null);
+	const showTitle = props.embedData?.showTitle ?? false;
+	const editorActive = useAtomValue(editorActiveAtom);
 
 	function handleCollapsedChange(value: boolean) {
 		setCollapsed(value);
@@ -97,7 +98,6 @@ export function WritingEmbed (props: {
 	function handleTitleCommit(newTitle: string) {
 		const trimmed = newTitle.trim() || props.writingFileRef.basename;
 		setTitle(trimmed);
-		setIsEditingTitle(false);
 		props.onTitleChange?.(trimmed);
 	}
 
@@ -136,7 +136,8 @@ export function WritingEmbed (props: {
 		{
 			text: 'Embed display',
 			icon: 'unfold-vertical',
-			section: 'inkc-file',
+			section: 'inkc-display',
+			editsNote: true,
 			action: () => {
 				new EmbedHeightModal({
 					plugin: props.plugin,
@@ -147,9 +148,17 @@ export function WritingEmbed (props: {
 			},
 		},
 		{
+			text: showTitle ? 'Hide title' : 'Show title',
+			icon: 'heading',
+			section: 'inkc-display',
+			editsNote: true,
+			action: () => props.onShowTitleChange?.(!showTitle),
+		},
+		{
 			text: 'Remove embed',
 			icon: 'trash-2',
 			section: 'inkc-danger',
+			editsNote: true,
 			action: () => {
 				props.remove()
 			},
@@ -165,9 +174,9 @@ export function WritingEmbed (props: {
 	// The preview's right-click / long-press menu leads with what its buttons and a tap do, so
 	// everything an embed can do is reachable from one place.
 	const previewMenuOptions = [
-		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', action: () => embedEditor.open() },
+		{ text: 'Edit', icon: 'pencil', section: 'inkc-open', editsNote: true, action: () => embedEditor.open() },
 		{ text: 'Open full screen', icon: 'maximize', section: 'inkc-open', action: openFullscreen },
-		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', action: () => handleCollapsedChange(true) },
+		{ text: 'Collapse', icon: 'chevrons-down-up', section: 'inkc-open', editsNote: true, action: () => handleCollapsedChange(true) },
 		...commonExtendedOptions,
 	];
 
@@ -189,37 +198,7 @@ export function WritingEmbed (props: {
 		>
 			{collapsed && (
 				<div className="inkc_collapsed-bar" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-					{isEditingTitle ? (
-						<input
-							ref={titleInputRef}
-							className="inkc_collapsed-title-input"
-							defaultValue={title}
-							autoFocus
-							onBlur={(e) => handleTitleCommit(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === 'Enter') handleTitleCommit((e.target as HTMLInputElement).value);
-								if (e.key === 'Escape') setIsEditingTitle(false);
-							}}
-							onPointerDown={(e) => e.stopPropagation()}
-						/>
-					) : (
-						<span
-							className="inkc_collapsed-label"
-							onDoubleClick={(e) => {
-								e.stopPropagation();
-								setIsEditingTitle(true);
-							}}
-							// A double-click is impractical with a stylus, so a single tap
-							// starts the rename on touch and e-ink devices.
-							onClick={(e) => {
-								e.stopPropagation();
-								if (hasCoarsePointer()) setIsEditingTitle(true);
-							}}
-							title={hasCoarsePointer() ? 'Tap to rename' : 'Double-click to rename'}
-						>
-							{title}
-						</span>
-					)}
+					<EmbedTitle title={title} onCommit={handleTitleCommit} />
 					<div className="inkc_collapsed-bar-buttons">
 						<button
 							className="inkc_collapse-btn"
@@ -247,6 +226,20 @@ export function WritingEmbed (props: {
 			)}
 
 			{!collapsed && <>
+				{showTitle && (
+					<div
+						className = {classNames([
+							'inkc_embed-title',
+							// Hidden rather than removed while editing, so the embed doesn't jump
+							// when the toolbar takes the title's place.
+							editorActive && 'inkc_hidden',
+						])}
+						onMouseDown = {(e) => e.stopPropagation()}
+						onClick = {(e) => e.stopPropagation()}
+					>
+						<EmbedTitle title={title} onCommit={handleTitleCommit} />
+					</div>
+				)}
 				{/* Include another container so that it's height isn't affected by the padding of the outer container */}
 				<div
 					className = {classNames([

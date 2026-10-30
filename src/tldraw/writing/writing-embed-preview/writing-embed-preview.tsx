@@ -49,7 +49,7 @@ const WritingEmbedPreview: React.FC<WritingEmbedPreviewProps> = (props) => {
     const containerElRef = React.useRef<HTMLDivElement>(null);
     const setEmbedState = useSetAtom(embedStateAtom);
     const [fileSrc, setFileSrc] = React.useState<string>(emptyWritingSvg);
-    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? []);
+    const contextMenu = useEmbedContextMenu(() => props.menuOptions ?? [], containerElRef);
 
     React.useEffect(() => {
         //console.log('PREVIEW mounted');

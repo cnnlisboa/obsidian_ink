@@ -13,6 +13,11 @@ export interface menuOption {
     icon?: string,
     /** Menu items sharing a section are grouped together with a separator. */
     section?: string,
+    /**
+     * Changes the note itself (its codeblock, or the embed's place in it), or needs the editor.
+     * Left out where neither exists to act through, such as an embed shown in reading mode.
+     */
+    editsNote?: boolean,
 }
 
 /** Builds a native Obsidian menu from a list of options. */

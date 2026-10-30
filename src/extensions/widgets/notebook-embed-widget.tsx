@@ -96,6 +96,13 @@ class NotebookEmbedWidget extends MarkdownRenderChild {
 						this.embedData = updatedData;
 						this.embedCtrls.updateEmbedData(updatedData);
 					}}
+					onShowTitleChange = {(showTitle: boolean) => {
+						const updatedData: NotebookEmbedData = { ...this.embedData, showTitle };
+						// Off is the default, so it's dropped from the codeblock rather than stored.
+						if (!showTitle) delete updatedData.showTitle;
+						this.embedData = updatedData;
+						this.embedCtrls.updateEmbedData(updatedData);
+					}}
 					onTitleChange = {(title: string) => {
 						this.renameNotebookFile(title);
 					}}

@@ -99,6 +99,13 @@ class WritingEmbedWidget extends MarkdownRenderChild {
 						// No manual re-render: updateEmbedData rewrites the codeblock, and CodeMirror
 						// rebuilds the widget from that - same path the collapsed toggle relies on.
 					}}
+					onShowTitleChange = {(showTitle: boolean) => {
+						const updatedData: WritingEmbedData = { ...this.embedData, showTitle };
+						// Off is the default, so it's dropped from the codeblock rather than stored.
+						if (!showTitle) delete updatedData.showTitle;
+						this.embedData = updatedData;
+						this.embedCtrls.updateEmbedData(updatedData);
+					}}
 					onTitleChange = {(title: string) => {
 						this.renameWritingFile(title);
 					}}

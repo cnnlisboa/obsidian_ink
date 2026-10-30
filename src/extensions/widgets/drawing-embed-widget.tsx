@@ -142,6 +142,13 @@ class DrawingEmbedWidget extends MarkdownRenderChild {
 						this.embedData = updatedData;
 						this.updateEmbed(updatedData);
 					}}
+					onShowTitleChange = {(showTitle: boolean) => {
+						const updatedData: DrawingEmbedData = { ...this.embedData, showTitle };
+						// Off is the default, so it's dropped from the codeblock rather than stored.
+						if (!showTitle) delete updatedData.showTitle;
+						this.embedData = updatedData;
+						this.updateEmbed(updatedData);
+					}}
 					onTitleChange = {(title: string) => {
 						this.renameDrawingFile(title);
 					}}
