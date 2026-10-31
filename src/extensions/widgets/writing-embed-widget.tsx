@@ -123,7 +123,7 @@ class WritingEmbedWidget extends MarkdownRenderChild {
 			</JotaiProvider>
 		);
 
-		applyCommonAncestorStyling(this.el)
+		applyCommonAncestorStyling(this.el, 'writing')
 	}
 
 	async onunload() {

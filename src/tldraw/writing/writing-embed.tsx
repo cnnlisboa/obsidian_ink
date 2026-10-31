@@ -12,7 +12,7 @@ import { GlobalSessionState } from "src/logic/stores";
 import { useDispatch } from 'react-redux';
 import { WritingEmbedPreviewWrapper } from "./writing-embed-preview/writing-embed-preview";
 import { openInkFile } from "src/utils/open-file";
-import { WritingEmbedData } from "src/utils/embed";
+import { WritingEmbedData, remeasureNoteAroundEmbed } from "src/utils/embed";
 import { nanoid } from "nanoid";
 import classNames from "classnames";
 import { atom, useAtomValue, useSetAtom } from "jotai";
@@ -528,12 +528,17 @@ export function WritingEmbed (props: {
 		// itself scrolls over the taller SVG, and in the editor the tldraw camera does the moving.
 		const maxHeight = props.embedData?.maxHeight;
 		const appliedHeight = maxHeight ? Math.min(height, maxHeight) : height;
+		const heightChanged = resizeContainerElRef.current.style.height !== appliedHeight + 'px';
 		resizeContainerElRef.current.style.height = appliedHeight + 'px';
 		setTimeout( () => {
 			// Applies after slight delay so it doesn't affect the first resize
 			if(!resizeContainerElRef.current) return;
 			resizeContainerElRef.current.classList.add('inkc_smooth-transition');
 		}, 100)
+		// Once the height has finished easing to its new value. See inkc_smooth-transition.
+		if(heightChanged) setTimeout(() => {
+			if(embedContainerElRef.current) remeasureNoteAroundEmbed(embedContainerElRef.current);
+		}, 400);
 	}
 
 };

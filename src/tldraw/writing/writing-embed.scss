@@ -143,7 +143,7 @@
 
 // Default: constrain embeds within their parent. Uses both logical and physical
 // margin resets to handle themes that set margins via either property type.
-// When applyCommonAncestorStyling() determines the embed should extend to
+// When applyCommonAncestorStyling() determines the embed can extend to
 // full width, it applies inline-style !important overrides which take precedence.
 .cm-preview-code-block.cm-embed-block.markdown-rendered.inkc_embed-block,
 .cm-preview-code-block.cm-embed-block.markdown-rendered.inkc_embed-block:hover {
@@ -152,6 +152,57 @@
     margin-left: 0 !important;
     margin-right: 0 !important;
     max-width: 100% !important;
+}
+
+// How far those overrides take an embed into the margins that hold the note's text in from the
+// pane's edges. applyCommonAncestorStyling records the margins as --inkc-bleed-start/end, only
+// where taking them lands on the pane's edge, and sets the block's margins to these.
+// Out to just short of the pane's edge...
+.inkc_embed-block {
+    --inkc-bleed-margin-start: calc(-1 * var(--inkc-bleed-start, 0px) + 4px);
+    --inkc-bleed-margin-end: calc(-1 * var(--inkc-bleed-end, 0px) + 4px);
+}
+
+// ...unless Readable Line Length makes the text column out of those margins, so an embed stays
+// inside it. Obsidian sets the class on the note's view. Reading mode stays in its column too.
+.is-readable-line-width .inkc_embed-block,
+.inkc_embed-block.inkc_reading-embed-block {
+    --inkc-bleed-margin-start: 0px;
+    --inkc-bleed-margin-end: 0px;
+}
+
+// Full width writing (see writing-embed-style.ts): square, unframed, and all the way out. With
+// Readable Line Length on, that's only where the column fills the pane, as on a phone. A column
+// centred in a wider pane has no margins recorded, so there the embed fills the column.
+body.inkc_full-width-writing {
+    .inkc_embed-block.inkc_writing-embed-block {
+        --inkc-bleed-margin-start: calc(-1 * var(--inkc-bleed-start, 0px));
+        --inkc-bleed-margin-end: calc(-1 * var(--inkc-bleed-end, 0px));
+    }
+
+    .inkc_writing-embed-preview.inkc_visible-background {
+        border: none;
+        border-radius: 0;
+    }
+
+    .inkc_embed .inkc_writing-editor {
+        outline: none;
+        border-radius: 0;
+    }
+
+    // Only the writing goes out to the edges. The embed's own controls stay in line with the text.
+    .inkc_writing-embed-block {
+        .inkc_collapsed-bar,
+        .inkc_embed-title,
+        .inkc_embed-page-bar {
+            margin-inline-start: var(--inkc-bleed-start, 0px);
+            margin-inline-end: var(--inkc-bleed-end, 0px);
+        }
+
+        .inkc_preview-buttons {
+            right: calc(4px + var(--inkc-bleed-end, 0px));
+        }
+    }
 }
 
 

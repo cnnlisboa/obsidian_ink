@@ -70,6 +70,26 @@ const WritingEmbedPreview: React.FC<WritingEmbedPreviewProps> = (props) => {
         : preview?.previewUri
     ) || emptyWritingSvg;
 
+    // The height is measured once, when the preview loads, but it follows the width: a phone
+    // turned on its side, or the writing embed style switched while the note is open. So it's
+    // measured again whenever the width changes.
+    React.useEffect(() => {
+        const el = containerElRef.current;
+        if (!el) return;
+        let lastWidth: number | undefined;
+        const observer = new ResizeObserver(() => {
+            const rect = el.getBoundingClientRect();
+            const firstReport = lastWidth === undefined;
+            if (rect.width === lastWidth) return;
+            lastWidth = rect.width;
+            // A hidden note (a background tab) reads as zero, and is measured again when shown.
+            if (firstReport || !rect.width || !rect.height) return;
+            props.onResize(rect.height);
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [])
+
     // Check if src is a DataURI. If not, it's an SVG
     const isImg = fileSrc.slice(0, 4) === 'data';
 

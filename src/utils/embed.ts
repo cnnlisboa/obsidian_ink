@@ -3,6 +3,7 @@
 ///////
 
 import { EditorPosition, MarkdownPostProcessorContext, MarkdownViewModeType } from "obsidian";
+import { EditorView } from "@codemirror/view";
 import { DRAW_EMBED_KEY, DRAWING_INITIAL_ASPECT_RATIO, DRAWING_INITIAL_HEIGHT, DRAWING_INITIAL_WIDTH, PLUGIN_VERSION, WRITE_EMBED_KEY } from "src/constants";
 import InkPlugin from "src/main";
 
@@ -242,66 +243,109 @@ export const getViewMode = (el: HTMLElement): MarkdownViewModeType | null => {
 	return null;
 };
 
-export function applyCommonAncestorStyling(embedEl: HTMLElement) {
-	// Reading mode renders the block into `.markdown-preview-sizer`, which already is the
-	// reading column - so the block only needs marking for the stylesheet, not re-measuring.
-	// The full-width margin negation below is deliberately skipped: the reading column has no
-	// scroller padding to negate, and guessing at one is how the embed ends up overflowing.
+export function applyCommonAncestorStyling(embedEl: HTMLElement, filetype: 'writing' | 'drawing') {
+	// Reading mode renders the block into `.markdown-preview-sizer`, the reading column, with none
+	// of Live Preview's scaffolding - so it's marked for its own rules in plugin-polish.scss, and
+	// its margins are those of the reading view rather than CodeMirror's scroller.
 	if(isInReadingMode(embedEl)) {
 		const readingBlockEl = (embedEl.closest('[class*="block-language-"]') ?? embedEl) as HTMLElement;
-		readingBlockEl.classList.add('inkc_embed-block', 'inkc_reading-embed-block');
+		readingBlockEl.classList.add('inkc_embed-block', `inkc_${filetype}-embed-block`, 'inkc_reading-embed-block');
+		recordScrollerMargins(readingBlockEl);
 		return;
 	}
 
 	const parentEmbedBlockEl = embedEl.closest('.cm-embed-block') as HTMLElement;
 	if(!parentEmbedBlockEl) return;
 
-	parentEmbedBlockEl.classList.add('inkc_embed-block');
+	parentEmbedBlockEl.classList.add('inkc_embed-block', `inkc_${filetype}-embed-block`);
+	recordScrollerMargins(parentEmbedBlockEl);
+}
 
-	// When Readable Line Length is enabled, the scroller padding creates the reading column.
-	// Negating that padding would blow past the column to full viewport width, so skip it.
-	if(document.body.classList.contains('is-readable-line-width')) return;
+/**
+ * Measures every embed block's margins again. Whether a note's column fills its pane changes
+ * with the pane's width: a phone or tablet turned on its side, a sidebar opened.
+ */
+export function recordAllScrollerMargins() {
+	document.querySelectorAll<HTMLElement>('.inkc_embed-block').forEach(recordScrollerMargins);
+}
 
+/**
+ * Lets an embed block reach out into the margins that hold a note's text in from the pane's edges.
+ * The distance to each edge is recorded on the block as --inkc-bleed-start and --inkc-bleed-end,
+ * and the stylesheet decides how much of it to take (see --inkc-bleed-margin-* in
+ * writing-embed.scss), so how far an embed goes follows Readable Line Length and the writing
+ * embed style as they change.
+ */
+function recordScrollerMargins(blockEl: HTMLElement) {
+	const reading = blockEl.classList.contains('inkc_reading-embed-block');
+	const scrollerEl = blockEl.closest(reading ? '.markdown-preview-view' : '.cm-scroller');
+	const columnEl = blockEl.closest(reading ? '.markdown-preview-sizer' : '.cm-sizer');
+	// What the block sits in, which its own margins don't move, so this can be measured again.
+	const contentEl = blockEl.parentElement;
 	// An embed block without a note scroller around it (a note embedded in another, a hover
 	// preview) has no padding to negate.
-	const parentPageScrollerEl = embedEl.closest('.cm-scroller') as HTMLElement | null;
-	if(!parentPageScrollerEl) return;
-	const scrollerStyle = window.getComputedStyle(parentPageScrollerEl);
+	if(!scrollerEl || !columnEl || !contentEl) return;
+	const scrollerRect = scrollerEl.getBoundingClientRect();
+	// A note in a background tab isn't laid out, so there's nothing to measure. Switching to it
+	// fires the workspace's resize, which measures it then. See registerWritingEmbedStyle.
+	if(!scrollerRect.width) return;
+	const scrollerStyle = window.getComputedStyle(scrollerEl);
 
-	const scrollerInlineStartMargin = scrollerStyle.paddingInlineStart;
-	const scrollerInlineEndMargin = scrollerStyle.paddingInlineEnd;
-	const scrollerMarginLeft = scrollerStyle.paddingLeft;
-	const scrollerMarginRight = scrollerStyle.paddingRight;
+	const startMarginValue = parseFloat(scrollerStyle.paddingInlineStart) || 0;
+	const endMarginValue = parseFloat(scrollerStyle.paddingInlineEnd) || 0;
 
-	// Verify the embed block's offset from the scroller closely matches the scroller padding.
-	// In the default theme (no readable line length), the content starts at the padding edge,
-	// so negating the padding extends the embed to the scroller edge.
-	// Themes like Minimal use .cm-sizer width constraints + auto margins to center content,
-	// so the embed's offset from the scroller is much larger than the padding. In that case,
-	// applying a negative margin would push the embed off-screen to the left.
-	const scrollerRect = parentPageScrollerEl.getBoundingClientRect();
-	const embedRect = parentEmbedBlockEl.getBoundingClientRect();
+	// Verify the column's offset from the scroller closely matches the scroller padding.
+	// In the default theme, and with Readable Line Length on in a pane no wider than the column
+	// (a phone), the column starts at the padding edge, so the embed can go out to the scroller edge.
+	// Readable Line Length in a wider pane, and themes like Minimal, use .cm-sizer width constraints
+	// + auto margins to center content, so the column's offset from the scroller is much larger than
+	// the padding. In that case, applying a negative margin would push the embed off-screen to the left.
+	// The column is measured rather than the embed because line numbers sit in the column, beside
+	// the text: the embed starts past them, and goes out over them.
+	const columnRect = columnEl.getBoundingClientRect();
+	const contentRect = contentEl.getBoundingClientRect();
 
-	const startMarginValue = parseFloat(scrollerInlineStartMargin) || 0;
-	const endMarginValue = parseFloat(scrollerInlineEndMargin) || 0;
-	const embedStartOffset = embedRect.left - scrollerRect.left;
-	const embedEndOffset = scrollerRect.right - embedRect.right;
-
-	// Only negate padding if the embed's offset closely matches the scroller padding
+	// Only negate padding if the column's offset closely matches the scroller padding
 	// (tolerance of 20px to account for sub-pixel rounding and minor theme adjustments)
-	const pageHasScrollerInlineStartMargin = scrollerInlineStartMargin && scrollerInlineStartMargin !== '0' && scrollerInlineStartMargin !== '0px';
-	if(pageHasScrollerInlineStartMargin && Math.abs(embedStartOffset - startMarginValue) < 20) {
-		let style = parentEmbedBlockEl.getAttribute('style') ?? '';
-		style += `; margin-inline-start: calc(-1 * ${scrollerInlineStartMargin} + 4px) !important`;
-		parentEmbedBlockEl.setAttribute('style', style);
-	}
+	const fillsStart = startMarginValue > 0 && Math.abs(columnRect.left - scrollerRect.left - startMarginValue) < 20;
+	const fillsEnd = endMarginValue > 0 && Math.abs(scrollerRect.right - columnRect.right - endMarginValue) < 20;
 
-	const pageHasScrollerInlineEndMargin = scrollerInlineEndMargin && scrollerInlineEndMargin !== '0' && scrollerInlineEndMargin !== '0px';
-	if(pageHasScrollerInlineEndMargin && Math.abs(embedEndOffset - endMarginValue) < 20) {
-		let style = parentEmbedBlockEl.getAttribute('style') ?? '';
-		style += `; margin-inline-end: calc(-1 * ${scrollerInlineEndMargin} + 4px) !important`;
-		parentEmbedBlockEl.setAttribute('style', style);
+	setBleed(blockEl, 'start', fillsStart ? contentRect.left - scrollerRect.left : undefined);
+	setBleed(blockEl, 'end', fillsEnd ? scrollerRect.right - contentRect.right : undefined);
+
+	// The stylesheet holds embeds to their column's width, which turned negative margins into
+	// shifting the embed sideways rather than widening it.
+	if(fillsStart || fillsEnd) {
+		blockEl.style.setProperty('max-width', 'none', 'important');
+	} else {
+		blockEl.style.removeProperty('max-width');
 	}
+}
+
+function setBleed(blockEl: HTMLElement, side: 'start' | 'end', distancePx: number | undefined) {
+	if(distancePx === undefined) {
+		blockEl.style.removeProperty(`--inkc-bleed-${side}`);
+		blockEl.style.removeProperty(`margin-inline-${side}`);
+		return;
+	}
+	blockEl.style.setProperty(`--inkc-bleed-${side}`, `${Math.round(distancePx)}px`);
+	blockEl.style.setProperty(`margin-inline-${side}`, `var(--inkc-bleed-margin-${side}, 0px)`, 'important');
+}
+
+/**
+ * Tells the note's editor that an embed in it has changed height. CodeMirror notices an embed
+ * growing but not shrinking: everything below keeps its old position, so line numbers sit beside
+ * the wrong lines and taps there land on the wrong line until the next edit.
+ */
+export function remeasureNoteAroundEmbed(el: HTMLElement) {
+	const editorEl = el.closest('.cm-editor') as HTMLElement | null;
+	const view = editorEl && EditorView.findFromDOM(editorEl);
+	if(!view) return;
+	// Not public API: makes the measure read heights again rather than keep the ones it has. If
+	// CodeMirror drops it, this is an ordinary measure.
+	const viewState = (view as any).viewState;
+	if(viewState && 'mustMeasureContent' in viewState) viewState.mustMeasureContent = true;
+	view.requestMeasure();
 }
 
 /**

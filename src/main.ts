@@ -28,6 +28,7 @@ import { INK_FILE_EXTS } from './constants';
 import { drawDefaultSvgStr, writeDefaultSvgStr, writeExistingSvgStr, writePasteSvgStr } from './graphics/icons/command-icons';
 import { drawExistingSvgStr, drawPasteSvgStr } from './graphics/icons/command-icons';
 import { applyDeviceClasses } from './utils/device-classes';
+import { registerWritingEmbedStyle } from './utils/writing-embed-style';
 import { registerOpenEmbedDismissal } from './logic/open-embed';
 import { registerSvgSidecars } from './logic/svg-sidecar';
 import { transcribeNoteHandwriting } from './commands/transcribe-note-handwriting';
@@ -45,6 +46,7 @@ export default class InkPlugin extends Plugin {
 		await this.loadSettings();
 
 		applyDeviceClasses(this);
+		registerWritingEmbedStyle(this);
 		registerOpenEmbedDismissal(this);
 
 		// const setPlugin = useSetAtom(inkPluginAtom);

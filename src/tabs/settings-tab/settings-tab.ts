@@ -3,7 +3,8 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import InkPlugin from "src/main";
 import MyPlugin from "src/main";
 import { ConfirmationModal } from "src/modals/confirmation-modal/confirmation-modal";
-import { DEFAULT_SETTINGS } from 'src/types/plugin-settings';
+import { DEFAULT_SETTINGS, WritingEmbedStyle } from 'src/types/plugin-settings';
+import { applyWritingEmbedStyle } from 'src/utils/writing-embed-style';
 import { setNewWritingLineHeight } from 'src/utils/tldraw-helpers';
 import { showWelcomeTips, showWelcomeTips_maybe } from 'src/notices/welcome-notice';
 import { ToggleAccordionSetting } from 'src/components/dom-components/toggle-accordion-setting';
@@ -460,6 +461,22 @@ function insertWritingSettings(containerEl: HTMLElement, plugin: InkPlugin, refr
 				await plugin.saveSettings();
 				refresh();
 			})
+		});
+
+	new Setting(sectionEl)
+		.setClass('inkc_setting')
+		.setName('Embed style')
+		.setDesc('Full width drops the rounded frame and takes writing out to the edges of the text column, like a page in a note-taking app.')
+		.addDropdown((dropdown) => {
+			dropdown.addOption('card', 'Card');
+			dropdown.addOption('fullWidthOnMobile', 'Full width on phones and tablets');
+			dropdown.addOption('fullWidth', 'Full width everywhere');
+			dropdown.setValue(plugin.settings.writingEmbedStyle);
+			dropdown.onChange(async (value) => {
+				plugin.settings.writingEmbedStyle = value as WritingEmbedStyle;
+				applyWritingEmbedStyle(plugin);
+				await plugin.saveSettings();
+			});
 		});
 
 	new Setting(sectionEl)

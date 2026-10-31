@@ -156,7 +156,7 @@ class DrawingEmbedWidget extends MarkdownRenderChild {
 			</JotaiProvider>
         );
 
-		applyCommonAncestorStyling(this.el)
+		applyCommonAncestorStyling(this.el, 'drawing')
 	}
 
 	async onunload() {

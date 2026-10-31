@@ -4,6 +4,10 @@ import { WRITING_LINE_HEIGHT } from "src/constants";
 ////////
 ////////
 
+// A rounded card, or square and the full width of the text column - on phones and tablets only,
+// or everywhere.
+export type WritingEmbedStyle = 'card' | 'fullWidthOnMobile' | 'fullWidth';
+
 export interface PluginSettings {
 	// Helpers
     onboardingTips: {
@@ -58,6 +62,8 @@ export interface PluginSettings {
 	writingManualLineAddCount: number,
 	writingLinesWhenLocked: boolean,
 	writingBackgroundWhenLocked: boolean,
+	// How writing embeds sit in a note. See writing-embed-style.ts.
+	writingEmbedStyle: WritingEmbedStyle,
 	// Drawing specific
 	drawingEnabled: boolean,
 	drawingFrameWhenLocked: boolean,
@@ -107,6 +113,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	writingManualLineAddCount: 5,
 	writingLinesWhenLocked: true,
 	writingBackgroundWhenLocked: true,
+	writingEmbedStyle: 'card',
 	// Drawing specific
 	drawingEnabled: true,
 	drawingFrameWhenLocked: false,
