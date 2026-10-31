@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import json;d=json.load\\(open\\('data.json'\\)\\);[print\\(k,'=',d[k]\\) for k in sorted\\(d\\) if any\\(s in k.lower\\(\\) for s in ['index','ext','pdf','image','ocr','office','text','unsupported','ignore','path']\\)]\")",
+      "Bash(grep -oE '.{120}\\(codeblock|code block|```\\).{160}' main.js)",
+      "Bash(grep -oiE '.{80}\\(stripCode|removeCode|code_?block|```\\\\[\\).{120}' main.js)",
+      "Bash(python3 -c \"import json,sys;d=json.load\\(sys.stdin\\);print\\(d['id'],d['version']\\)\")",
+      "Bash(python3 -c \"import json;d=json.load\\(open\\('plugins/omnisearch/data.json'\\)\\);print\\('omnisearch imagesIndexing =',d['imagesIndexing'],' PDFIndexing =',d['PDFIndexing']\\)\")"
+    ]
+  }
+}
